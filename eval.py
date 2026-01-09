@@ -16,7 +16,7 @@ from src.AsymFormer import B0_T
 from utils import utils
 from utils.utils import load_ckpt, intersectionAndUnion, AverageMeter, accuracy, macc
 
-pth_dir = './model_M1/ckpt_epoch_500.00.pth'
+pth_dir = './model_M1_22k/ckpt_epoch_300.00.pth'
 model = B0_T(num_classes=40)
 
 parser = argparse.ArgumentParser(description='RGBD Sementic Segmentation')
