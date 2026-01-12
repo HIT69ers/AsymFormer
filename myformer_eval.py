@@ -12,12 +12,12 @@ import cv2
 from collections import OrderedDict
 import torch.optim
 import NYUv2_dataloader as Data
-from src.AsymFormer import B0_T
+from src.myformer import MyFormer
 from utils import utils
 from utils.utils import load_ckpt, intersectionAndUnion, AverageMeter, accuracy, macc
 
-pth_dir = './My_model_M1/ckpt_epoch_500.00.pth'
-model = B0_T(num_classes=40)
+pth_dir = './My_model_M1/ckpt_epoch_175.00.pth'
+model = MyFormer(num_classes=40)
 
 parser = argparse.ArgumentParser(description='RGBD Sementic Segmentation')
 parser.add_argument('--data-dir', default='./data', metavar='DIR',

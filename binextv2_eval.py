@@ -12,12 +12,12 @@ import cv2
 from collections import OrderedDict
 import torch.optim
 import NYUv2_dataloader as Data
-from src.AsymFormer import B0_T
+from src.binextv2 import BiNextv2
 from utils import utils
 from utils.utils import load_ckpt, intersectionAndUnion, AverageMeter, accuracy, macc
 
-pth_dir = './My_model_M1/ckpt_epoch_500.00.pth'
-model = B0_T(num_classes=40)
+pth_dir = './Binextv2_no_d_pre_model_M1/ckpt_epoch_475.00.pth'
+model = BiNextv2(num_classes=40)
 
 parser = argparse.ArgumentParser(description='RGBD Sementic Segmentation')
 parser.add_argument('--data-dir', default='./data', metavar='DIR',
@@ -76,6 +76,32 @@ class ToTensor(object):
         return {'image': torch.from_numpy(image).float(),
                 'depth': torch.from_numpy(depth).float(),
                 'label': torch.from_numpy(label).float()}
+    
+
+class d_mul_channel_ToTensor(object):
+    """Convert ndarrays in sample to Tensors."""
+
+    def __call__(self, sample):
+        image, depth, label = sample['image'], sample['depth'], sample['label']
+        # label = label.astype(np.int16)
+        # h = label.shape[0]
+        # w = label.shape[1]
+        # # Generate different label scales
+        # label3 = cv2.resize(label, (w // 4, h // 4), cv2.INTER_NEAREST)
+        # label4 = cv2.resize(label, (w // 8, h // 8), cv2.INTER_NEAREST)
+        # label5 = cv2.resize(label, (w // 16, h // 16), cv2.INTER_NEAREST)
+
+        # swap color axis because
+        # numpy image: H x W x C
+        # torch image: C X H X W
+        image = image.transpose((2, 0, 1))
+        depth = depth.transpose((2, 0, 1)).astype(np.float64)
+        return {'image': torch.from_numpy(image).float(),
+                'depth': torch.from_numpy(depth).float(),
+                'label': torch.from_numpy(label).float(),}
+                # 'label3': torch.from_numpy(label3).float(),
+                # 'label4': torch.from_numpy(label4).float(),
+                # 'label5': torch.from_numpy(label5).float()}
 
 
 class Normalize(object):
@@ -135,11 +161,12 @@ def inference():
     model.to(device)
 
     val_data = Data.RGBD_Dataset(transform=torchvision.transforms.Compose([scaleNorm(),
-                                                                           ToTensor(),
+                                                                           d_mul_channel_ToTensor(),
                                                                            Normalize()]),
                                  phase_train=False,
                                  data_dir=args.data_dir,
-                                 txt_name='test.txt'
+                                 txt_name='test.txt',
+                                 d_mul_channel=True
                                  )
     val_loader = DataLoader(val_data, batch_size=1, shuffle=False, num_workers=0, pin_memory=True)
 
@@ -154,7 +181,7 @@ def inference():
     starter, ender = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
     timings = np.zeros((len(val_loader), 1))
     dummy_rgb = torch.rand([1, 3, 480, 640], device=device)
-    dummy_depth = torch.rand([1, 1, 480, 640], device=device)
+    dummy_depth = torch.rand([1, 3, 480, 640], device=device)
 
     with torch.no_grad():
         for _ in range(10):

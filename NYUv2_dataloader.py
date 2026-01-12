@@ -13,9 +13,10 @@ image_w = 640
 
 
 class RGBD_Dataset(Dataset):
-    def __init__(self, transform=None, phase_train=True, data_dir=None, txt_name='train.txt'):
+    def __init__(self, transform=None, phase_train=True, data_dir=None, txt_name='train.txt', d_mul_channel=False):
         self.phase_train = phase_train
         self.transform = transform
+        self.d_mul_channel = d_mul_channel  # 若为True，以三通道方式加载Depth数据
 
         root = data_dir
         assert os.path.exists(root), "path '{}' does not exist.".format(root)
@@ -52,6 +53,8 @@ class RGBD_Dataset(Dataset):
         label = cv2.imread(label_dir[idx], flags=cv2.IMREAD_UNCHANGED)
         depth = cv2.imread(depth_dir[idx], flags=cv2.IMREAD_UNCHANGED)
         depth = depth.astype(np.float32)
+        if self.d_mul_channel:
+            depth = cv2.merge([depth, depth, depth])
 
         image = self._open_image(img_dir[idx], cv2.COLOR_BGR2RGB)
 
@@ -206,6 +209,32 @@ class ToTensor(object):
         # torch image: C X H X W
         image = image.transpose((2, 0, 1))
         depth = np.expand_dims(depth, 0).astype(np.float64)
+        return {'image': torch.from_numpy(image).float(),
+                'depth': torch.from_numpy(depth).float(),
+                'label': torch.from_numpy(label).float(),}
+                # 'label3': torch.from_numpy(label3).float(),
+                # 'label4': torch.from_numpy(label4).float(),
+                # 'label5': torch.from_numpy(label5).float()}
+
+
+class d_mul_channel_ToTensor(object):
+    """Convert ndarrays in sample to Tensors."""
+
+    def __call__(self, sample):
+        image, depth, label = sample['image'], sample['depth'], sample['label']
+        label = label.astype(np.int16)
+        h = label.shape[0]
+        w = label.shape[1]
+        # # Generate different label scales
+        # label3 = cv2.resize(label, (w // 4, h // 4), cv2.INTER_NEAREST)
+        # label4 = cv2.resize(label, (w // 8, h // 8), cv2.INTER_NEAREST)
+        # label5 = cv2.resize(label, (w // 16, h // 16), cv2.INTER_NEAREST)
+
+        # swap color axis because
+        # numpy image: H x W x C
+        # torch image: C X H X W
+        image = image.transpose((2, 0, 1))
+        depth = depth.transpose((2, 0, 1)).astype(np.float64)
         return {'image': torch.from_numpy(image).float(),
                 'depth': torch.from_numpy(depth).float(),
                 'label': torch.from_numpy(label).float(),}
