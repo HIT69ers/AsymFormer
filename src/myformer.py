@@ -59,9 +59,14 @@ def get_segformer_backbone(shape='b0', pretrained=None):
     )
     assert shape in backbone.keys()
     model = backbone[shape]()
+    net_dict =  model.state_dict()
 
     if pretrained is not None:
-        raise NotImplementedError
+        print(f"Loading pretrained checkpoint from {pretrained}")
+        checkpoint = torch.load(pretrained, map_location="cpu")
+        checkpoint_dict = {k: v for k, v in list(checkpoint.items()) if k in net_dict}
+        net_dict.update(checkpoint_dict)
+        model.load_state_dict(net_dict, strict=True)
     
     model_dict = dict(
         patch_embeds=[model.patch_embed1, model.patch_embed2, model.patch_embed3, model.patch_embed4],
