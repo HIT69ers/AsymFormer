@@ -20,7 +20,7 @@ pretrained: None or str
 return:
 {downsample_layers: [], stages: []}
 """
-def get_convnextv2_backbone(shape='T', pretrained='/home/sunyuhang/WorkSpace/pretrained/convnextv2_tiny_1k_224_ema.pt', drop_path_rate=0.3):
+def get_convnextv2_backbone(shape='T', pretrained="/mnt/syh/pretrained/ConvNeXtV2/ImageNet-1K/convnextv2_tiny_1k_224_ema.pt", drop_path_rate=0.3):
     backbone = dict(
         A=convnextv2_atto,
         F=convnextv2_femto,

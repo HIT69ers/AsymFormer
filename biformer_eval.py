@@ -2,7 +2,7 @@ import argparse
 import numpy as np
 import os
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ['CUDA_VISIBLE_DEVICES'] = '4'
 import torch
 import torchvision
 import time
@@ -16,11 +16,11 @@ from src.biformer import biformer
 from utils import utils
 from utils.utils import load_ckpt, intersectionAndUnion, AverageMeter, accuracy, macc
 
-pth_dir = '/home/sunyuhang/WorkSpace/AsymFormer/Biformer_b2_b0_0.5_M1_bsize8/ckpt_epoch_500.00.pth'
+pth_dir = "/mnt/syh/asym_checkpoints/Biformer_b3_b0_0.5_M1_bsize8/ckpt_epoch_500.00.pth"
 model = biformer(num_classes=40, downsample_ratio=0.5)
 
 parser = argparse.ArgumentParser(description='RGBD Sementic Segmentation')
-parser.add_argument('--data-dir', default='./data', metavar='DIR',
+parser.add_argument('--data-dir', default="/mnt/syh/datasets/NYUv2/data/", metavar='DIR',
                     help='path to dataset')
 parser.add_argument('-o', '--output', default='./result/', metavar='DIR',
                     help='path to output')
