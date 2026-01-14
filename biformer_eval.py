@@ -16,8 +16,8 @@ from src.biformer import biformer
 from utils import utils
 from utils.utils import load_ckpt, intersectionAndUnion, AverageMeter, accuracy, macc
 
-pth_dir = '/home/sunyuhang/WorkSpace/AsymFormer/Biformer_b2_b0_1.0_M1_bsize8/ckpt_epoch_500.00.pth'
-model = biformer(num_classes=40, downsample_ratio=1.0)
+pth_dir = '/home/sunyuhang/WorkSpace/AsymFormer/Biformer_b2_b0_0.5_M1_bsize8/ckpt_epoch_500.00.pth'
+model = biformer(num_classes=40, downsample_ratio=0.5)
 
 parser = argparse.ArgumentParser(description='RGBD Sementic Segmentation')
 parser.add_argument('--data-dir', default='./data', metavar='DIR',

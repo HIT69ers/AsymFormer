@@ -44,7 +44,7 @@ parser.add_argument('--save-epoch-freq', '-s', default=25, type=int,
                     metavar='N', help='save epoch frequency (default: 5)')
 parser.add_argument('--last-ckpt', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
-parser.add_argument('--ckpt-dir', default='./Biformer_b2_b0_1.0_M1_bsize8/', metavar='DIR',
+parser.add_argument('--ckpt-dir', default='./Biformer_b2_b0_0.5_M1_bsize8/', metavar='DIR',
                     help='path to save checkpoints')
 parser.add_argument('--checkpoint', action='store_true', default=False,
                     help='Using Pytorch checkpoint or not')
@@ -110,7 +110,7 @@ def train():
 
     num_train = len(train_data)
 
-    model = biformer(num_classes=40, downsample_ratio=1.0)
+    model = biformer(num_classes=40, downsample_ratio=0.5)
 
     CEL_weighted = nn.CrossEntropyLoss(reduction='mean', ignore_index=-1)
 
