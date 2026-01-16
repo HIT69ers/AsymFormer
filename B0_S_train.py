@@ -3,7 +3,7 @@ Our code is partially adapted from RedNet (https://github.com/JinDongJiang/RedNe
 '''
 import os
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ['CUDA_VISIBLE_DEVICES'] = '6'
 import argparse
 import time
 import torch
@@ -22,7 +22,7 @@ torch.backends.cudnn.enabled = True
 torch.backends.cudnn.benchmark = True
 
 parser = argparse.ArgumentParser(description='RGBD Sementic Segmentation')
-parser.add_argument('--data-dir', default='./data', metavar='DIR',
+parser.add_argument('--data-dir', default="/mnt/sdb/syh/datasets/data/", metavar='DIR',
                     help='path to dataset-D')
 parser.add_argument('--cuda', action='store_true', default=True,
                     help='enables CUDA training')
@@ -44,12 +44,12 @@ parser.add_argument('--save-epoch-freq', '-s', default=50, type=int,
                     metavar='N', help='save epoch frequency (default: 5)')
 parser.add_argument('--last-ckpt', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
-parser.add_argument('--ckpt-dir', default='./model_M1/', metavar='DIR',
+parser.add_argument('--ckpt-dir', default='/mnt/sdb/syh/asym_checkpoints/B0_S_0.6_bsize8', metavar='DIR',
                     help='path to save checkpoints')
 parser.add_argument('--checkpoint', action='store_true', default=False,
                     help='Using Pytorch checkpoint or not')
 
-DOWNSAMPLE_RATIO = 1.0
+DOWNSAMPLE_RATIO = 0.6
 
 args = parser.parse_args()
 device = torch.device("cuda:0" if args.cuda and torch.cuda.is_available() else "cpu")

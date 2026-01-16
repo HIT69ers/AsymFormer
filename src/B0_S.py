@@ -20,7 +20,7 @@ def load_pretrain2(net, pretrain_name):
     return net
 
 
-model1 = convnext_small_local(pretrained=True, in_22k=True, drop_path_rate=0.3, num_classes=21841)
+model1 = convnext_small_local(pretrained="/mnt/sdb/syh/pretrained/convnext_small_1k_224_ema.pth", in_22k=True, drop_path_rate=0.3, num_classes=1000)
 ft1 = model1.stages
 stem = model1.downsample_layers
 stem1 = [stem[0], stem[1], stem[2], stem[3]]
@@ -205,7 +205,7 @@ class down_sample_block(nn.Module):
 
         if self.block_num == 0:
             h, w = int(H * self.downsample_ratio), int(W * self.downsample_ratio)
-            x_rgb = F.interpolate(x_rgb, (h, w), mode='bilinear', align_corners=False)
+            image = F.interpolate(image, (h, w), mode='bilinear', align_corners=False)
 
         image = self.rgb_stem(image)
         _, _, h, w = image.shape
