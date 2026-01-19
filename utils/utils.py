@@ -172,6 +172,21 @@ def save_ckpt(ckpt_dir, model, optimizer, global_step, epoch, local_count, num_t
     print('{:>2} has been successfully saved'.format(path))
 
 
+def save_ckpt_new(ckpt_dir, model, optimizer, global_step, epoch, local_count, num_train, miou):
+    # usually this happens only on the start of a epoch
+    epoch_float = epoch + (local_count / num_train)
+    state = {
+        'global_step': global_step,
+        'epoch': epoch_float,
+        'state_dict': model.state_dict(),
+        'optimizer': optimizer.state_dict(),
+    }
+    ckpt_model_filename = f"epoch-{epoch}_miou-{miou}.pth"
+    path = os.path.join(ckpt_dir, ckpt_model_filename)
+    torch.save(state, path)
+    print('{:>2} has been successfully saved'.format(path))
+
+
 def load_ckpt(model, optimizer, model_file, device):
     if os.path.isfile(model_file):
         print("=> loading checkpoint '{}'".format(model_file))
