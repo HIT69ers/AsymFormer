@@ -20,7 +20,7 @@ def load_pretrain2(net, pretrain_name):
     return net
 
 
-model1 = convnext_small_local(pretrained="/mnt/sdb/syh/pretrained/convnext_small_1k_224_ema.pth", in_22k=True, drop_path_rate=0.3, num_classes=1000)
+model1 = convnext_small_local(pretrained="/mnt/syh/pretrained/convnext/convnext_small_1k_224_ema.pth", in_22k=True, drop_path_rate=0.3, num_classes=1000)
 ft1 = model1.stages
 stem = model1.downsample_layers
 stem1 = [stem[0], stem[1], stem[2], stem[3]]
