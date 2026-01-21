@@ -17,9 +17,9 @@ from utils import utils
 from utils.utils import load_ckpt, intersectionAndUnion, AverageMeter, accuracy, macc
 
 
-EPOCH = 50
+EPOCH = 500
 DOWNSAMPLE_RATIO = 0.6
-pth_dir = f"/mnt/syh/asym_checkpoints/Biformer_b3_b0_0.6_M1_bsize8/ckpt_epoch_{EPOCH}.00.pth"
+pth_dir = f"/mnt/syh/asym_checkpoints/Biformer_b3_b0_{DOWNSAMPLE_RATIO}_M1_bsize8/ckpt_epoch_{EPOCH}.00.pth"
 model = biformer(num_classes=40, downsample_ratio=DOWNSAMPLE_RATIO)
 print(f"==============================")
 print(f"Eval biformer_b3_b0_{DOWNSAMPLE_RATIO}_epoch-{EPOCH}")
@@ -236,6 +236,8 @@ def inference():
           .format(iou.mean(), acc_meter.average() * 100))
     print('平均推理时间：', timings.sum() / 654)
     np.save('SCC_SRM5', np.array(acc_collect))
+    print(f"Eval biformer_b3_b0_{DOWNSAMPLE_RATIO}_epoch-{EPOCH}")
+    print(f"==============================")
 
 
 if __name__ == '__main__':
