@@ -45,14 +45,14 @@ parser.add_argument('--save-epoch-freq', '-s', default=25, type=int,
                     metavar='N', help='save epoch frequency (default: 5)')
 parser.add_argument('--last-ckpt', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
-parser.add_argument('--ckpt-dir', default='/home/sunyuhang/WorkSpace/checkpoints/B0_S_0.6_bsize8', metavar='DIR',
+parser.add_argument('--ckpt-dir', default='/home/sunyuhang/WorkSpace/checkpoints/B0_S_0.5_auto_bsize8', metavar='DIR',
                     help='path to save checkpoints')
 parser.add_argument('--checkpoint', action='store_true', default=False,
                     help='Using Pytorch checkpoint or not')
 parser.add_argument('--amp', action='store_true', default=False,
                     help="autocast train")
 
-DOWNSAMPLE_RATIO = 0.6
+DOWNSAMPLE_RATIO = 0.5
 
 args = parser.parse_args()
 device = torch.device("cuda:0" if args.cuda and torch.cuda.is_available() else "cpu")
@@ -132,7 +132,7 @@ def val(model, dataloader, device):
 
         pred = model(image, depth)
         output = torch.max(pred, 1)[1] + 1
-        output = output.squeeze(0).cpu().numpy()
+        output = output.cpu().numpy()
 
         intersection, union = intersectionAndUnion(output, label, numClass=40)
         intersection_meter.update(intersection)
@@ -266,8 +266,8 @@ def train():
             
             logger.info(f"Epoch {real_epoch} validation result: mIoU {miou}, best mIoU {best_miou}")
 
-    save_ckpt(args.ckpt_dir, model, optimizer, global_step, args.epochs,
-              0, num_train)
+    # save_ckpt(args.ckpt_dir, model, optimizer, global_step, args.epochs,
+    #           0, num_train)
 
     print("Training completed ")
 

@@ -16,8 +16,8 @@ from src.B0_S import B0_S
 from utils import utils
 from utils.utils import load_ckpt, intersectionAndUnion, AverageMeter, accuracy, macc
 
-pth_dir = '/home/sunyuhang/WorkSpace/checkpoints/B0_S_1.0_bsize8/ckpt_epoch_500.00.pth'
-model = B0_S(num_classes=40, downsample_ratio=1.0)
+pth_dir = '/home/sunyuhang/WorkSpace/checkpoints/B0_S_0.5_bsize8/ckpt_epoch_450.00.pth'
+model = B0_S(num_classes=40, downsample_ratio=0.5)
 
 parser = argparse.ArgumentParser(description='RGBD Sementic Segmentation')
 parser.add_argument('--data-dir', default='./data', metavar='DIR',
