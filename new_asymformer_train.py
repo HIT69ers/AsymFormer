@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 import torch.optim
 import torchvision.transforms as transforms
 from torch import nn
-from src.B0_S import B0_S
+from src.new_asymformer import New_Asymformer
 import NYUv2_dataloader as Data
 from utils.utils import save_ckpt
 from utils.utils import load_ckpt
@@ -20,12 +20,25 @@ torch.backends.cudnn.enabled = True
 torch.backends.cudnn.benchmark = True
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '7'
-DOWNSAMPLE_RATIO = 0.9
+DOWNSAMPLE_RATIO = 0.7
 MEMORY_PATH = "/mnt/sdb/syh"
+MODEL_CONFIG = dict(name="new_former", 
+                    rgb_branch="S", 
+                    rgb_pretrained=os.path.join(MEMORY_PATH, "pretrained", "convnext_small_1k_224_ema.pth"),
+                    d_branch="b0",
+                    d_pretrained=None)
+print("===================Train Config===================")
+for k, v in MODEL_CONFIG.items():
+    print(f"{k}: {v}")
+print(f"Downsample_ratio: {DOWNSAMPLE_RATIO}")
+print("==================================================")
+
 dataset_path = os.path.join(MEMORY_PATH, "datasets", "data")
+ckpt_dir = os.path.join(MEMORY_PATH, "asym_checkpoints", MODEL_CONFIG['name'] + "_" + MODEL_CONFIG['rgb_branch'] + "_" + MODEL_CONFIG['d_branch'] + '_' +\
+                        str(DOWNSAMPLE_RATIO))
 
 parser = argparse.ArgumentParser(description='RGBD Sementic Segmentation')
-parser.add_argument('--data-dir', default="/mnt/sdb/syh/datasets/data/", metavar='DIR',
+parser.add_argument('--data-dir', default=dataset_path, metavar='DIR',
                     help='path to dataset-D')
 parser.add_argument('--cuda', action='store_true', default=True,
                     help='enables CUDA training')
@@ -47,7 +60,7 @@ parser.add_argument('--save-epoch-freq', '-s', default=25, type=int,
                     metavar='N', help='save epoch frequency (default: 5)')
 parser.add_argument('--last-ckpt', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
-parser.add_argument('--ckpt-dir', default=f'/mnt/sdb/syh/asym_checkpoints/B0_S_{DOWNSAMPLE_RATIO}_bsize8', metavar='DIR',
+parser.add_argument('--ckpt-dir', default=ckpt_dir, metavar='DIR',
                     help='path to save checkpoints')
 parser.add_argument('--checkpoint', action='store_true', default=False,
                     help='Using Pytorch checkpoint or not')
@@ -111,7 +124,12 @@ def train():
 
     num_train = len(train_data)
 
-    model = B0_S(num_classes=40, downsample_ratio=DOWNSAMPLE_RATIO)
+    model = New_Asymformer(rgb_branch=MODEL_CONFIG['rgb_branch'],
+                           rgb_pretrained=MODEL_CONFIG['rgb_pretrained'],
+                           d_branch=MODEL_CONFIG['d_branch'],
+                           d_pretrained=MODEL_CONFIG['d_pretrained'],
+                           downsample_ratio=DOWNSAMPLE_RATIO,
+                           num_classes=40)
 
     CEL_weighted = nn.CrossEntropyLoss(reduction='mean', ignore_index=-1)
 

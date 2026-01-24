@@ -405,3 +405,35 @@ class mit_b5(MixVisionTransformer):
             patch_size=4, embed_dims=[64, 128, 320, 512], num_heads=[1, 2, 5, 8], mlp_ratios=[4, 4, 4, 4],
             qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6), depths=[3, 6, 40, 3], sr_ratios=[8, 4, 2, 1],
             drop_rate=0.0, drop_path_rate=0.1)
+        
+
+"""
+params:
+shape: {b0, b1, b2, b3, b4, b5}
+"""
+def get_segformer_backbone(shape='b0', pretrained=None):
+    backbone = dict(
+        b0=mit_b0,
+        b1=mit_b1,
+        b2=mit_b2,
+        b3=mit_b3,
+        b4=mit_b4,
+        b5=mit_b5,
+    )
+    assert shape in backbone.keys()
+    model = backbone[shape]()
+    net_dict =  model.state_dict()
+
+    if pretrained is not None:
+        print(f"Loading pretrained checkpoint from {pretrained}")
+        checkpoint = torch.load(pretrained, map_location="cpu")
+        checkpoint_dict = {k: v for k, v in list(checkpoint.items()) if k in net_dict}
+        net_dict.update(checkpoint_dict)
+        model.load_state_dict(net_dict, strict=True)
+    
+    model_dict = dict(
+        patch_embeds=[model.patch_embed1, model.patch_embed2, model.patch_embed3, model.patch_embed4],
+        blocks=[model.block1, model.block2, model.block3, model.block4],
+        norms=[model.norm1, model.norm2, model.norm3, model.norm4]
+    )
+    return model_dict
