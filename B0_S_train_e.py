@@ -3,7 +3,7 @@ Our code is partially adapted from RedNet (https://github.com/JinDongJiang/RedNe
 '''
 import os
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '3'
+os.environ['CUDA_VISIBLE_DEVICES'] = '7'
 import argparse
 import time
 import torch
@@ -23,7 +23,7 @@ torch.backends.cudnn.enabled = True
 torch.backends.cudnn.benchmark = True
 
 parser = argparse.ArgumentParser(description='RGBD Sementic Segmentation')
-parser.add_argument('--data-dir', default="/mnt/syh/datasets/NYUv2/data/", metavar='DIR',
+parser.add_argument('--data-dir', default="/mnt/sdb/syh/datasets/data/", metavar='DIR',
                     help='path to dataset-D')
 parser.add_argument('--cuda', action='store_true', default=True,
                     help='enables CUDA training')
@@ -45,14 +45,14 @@ parser.add_argument('--save-epoch-freq', '-s', default=25, type=int,
                     metavar='N', help='save epoch frequency (default: 5)')
 parser.add_argument('--last-ckpt', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
-parser.add_argument('--ckpt-dir', default='/mnt/syh/asym_checkpoints/B0_S_0.9_bsize8', metavar='DIR',
+parser.add_argument('--ckpt-dir', default='/mnt/sdb/syh/asym_checkpoints/B0_S_0.6_auto_bsize8', metavar='DIR',
                     help='path to save checkpoints')
 parser.add_argument('--checkpoint', action='store_true', default=False,
                     help='Using Pytorch checkpoint or not')
 parser.add_argument('--amp', action='store_true', default=False,
                     help="autocast train")
 
-DOWNSAMPLE_RATIO = 0.9
+DOWNSAMPLE_RATIO = 0.6
 
 args = parser.parse_args()
 device = torch.device("cuda:0" if args.cuda and torch.cuda.is_available() else "cpu")
@@ -123,20 +123,33 @@ def val(model, dataloader, device):
     model.eval()
     intersection_meter = AverageMeter()
     union_meter = AverageMeter()
-    for batch_idx, sample in enumerate(dataloader):
-        if ((batch_idx + 1) % int(len(dataloader) * 0.5) == 0 or batch_idx == 0):
-            print(f"Validation Iter: {batch_idx + 1} / {len(dataloader)}")
-        image = sample['image'].to(device)
-        depth = sample['depth'].to(device)
-        label = sample['label'].numpy()
+    with torch.no_grad():
+        for batch_idx, sample in enumerate(dataloader):
+            if ((batch_idx + 1) % int(len(dataloader) * 0.5) == 0 or batch_idx == 0):
+                print(f"Validation Iter: {batch_idx + 1} / {len(dataloader)}")
+            image = sample['image'].to(device)
+            depth = sample['depth'].to(device)
+            label = sample['label'].numpy()  # shape: (B, H, W) or (H, W)
 
-        pred = model(image, depth)
-        output = torch.max(pred, 1)[1] + 1
-        output = output.squeeze(0).cpu().numpy()
+            pred = model(image, depth)
+            output = torch.max(pred, 1)[1].cpu().numpy()  # shape: (B, H, W) or (H, W)
 
-        intersection, union = intersectionAndUnion(output, label, numClass=40)
-        intersection_meter.update(intersection)
-        union_meter.update(union)
+            # 原代码使用了 +1，这里保留以保持与原评估脚本一致。
+            # 如果你的标签是 0..C-1，请移除下面这一行或调整为与标签一致。
+            output = output + 1
+
+            # 处理 batch 维度：若为批量（3D），逐样本计算 intersection/union
+            if output.ndim == 3:
+                for i in range(output.shape[0]):
+                    out_i = output[i]
+                    lab_i = label[i]
+                    intersection, union = intersectionAndUnion(out_i, lab_i, numClass=40)
+                    intersection_meter.update(intersection)
+                    union_meter.update(union)
+            else:
+                intersection, union = intersectionAndUnion(output, label, numClass=40)
+                intersection_meter.update(intersection)
+                union_meter.update(union)
     
     iou = intersection_meter.sum / (union_meter.sum + 1e-10)
     miou = iou.mean()

@@ -3,7 +3,7 @@ Our code is partially adapted from RedNet (https://github.com/JinDongJiang/RedNe
 '''
 import os
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '6'
+os.environ['CUDA_VISIBLE_DEVICES'] = '7'
 import argparse
 import time
 import torch
@@ -20,6 +20,8 @@ import random
 
 torch.backends.cudnn.enabled = True
 torch.backends.cudnn.benchmark = True
+
+DOWNSAMPLE_RATIO = 0.9
 
 parser = argparse.ArgumentParser(description='RGBD Sementic Segmentation')
 parser.add_argument('--data-dir', default="/mnt/sdb/syh/datasets/data/", metavar='DIR',
@@ -40,16 +42,16 @@ parser.add_argument('--weight-decay', '--wd', default=0.01, type=float,
                     metavar='W', help='weight decay (default: 1e-4)')
 parser.add_argument('--print-freq', '-p', default=50, type=int,
                     metavar='N', help='print batch frequency (default: 50)')
-parser.add_argument('--save-epoch-freq', '-s', default=50, type=int,
+parser.add_argument('--save-epoch-freq', '-s', default=25, type=int,
                     metavar='N', help='save epoch frequency (default: 5)')
 parser.add_argument('--last-ckpt', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
-parser.add_argument('--ckpt-dir', default='/mnt/sdb/syh/asym_checkpoints/B0_S_0.6_bsize8', metavar='DIR',
+parser.add_argument('--ckpt-dir', default=f'/mnt/sdb/syh/asym_checkpoints/B0_S_{DOWNSAMPLE_RATIO}_bsize8', metavar='DIR',
                     help='path to save checkpoints')
 parser.add_argument('--checkpoint', action='store_true', default=False,
                     help='Using Pytorch checkpoint or not')
 
-DOWNSAMPLE_RATIO = 0.6
+
 
 args = parser.parse_args()
 device = torch.device("cuda:0" if args.cuda and torch.cuda.is_available() else "cpu")
