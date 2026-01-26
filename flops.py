@@ -3,12 +3,12 @@ import torch.nn as nn
 from thop import profile
 
 from src.AsymFormer import B0_T
-from src.new_asymformer import New_Asymformer
+from src.new_asymformer import New_Asymformer, New_Asymformer_v2
 
 
 if __name__ == "__main__":
     # model = B0_T(num_classes=40)
-    model = New_Asymformer("S", "b0", None, None, 0.7, num_classes=40)
+    model = New_Asymformer_v2("S", "b0", None, None, 0.7, num_classes=40)
     model.eval()
     model.cuda()
     input_rgb = torch.rand(1, 3, 480, 640).cuda()

@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 import torch.optim
 import torchvision.transforms as transforms
 from torch import nn
-from src.new_asymformer import New_Asymformer
+from src.new_asymformer import New_Asymformer, New_Asymformer_v2
 import NYUv2_dataloader as Data
 from utils.utils import save_ckpt
 from utils.utils import load_ckpt
@@ -20,13 +20,14 @@ torch.backends.cudnn.enabled = True
 torch.backends.cudnn.benchmark = True
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '7'
-DOWNSAMPLE_RATIO = 0.7
+DOWNSAMPLE_RATIO = 0.6
 MEMORY_PATH = "/mnt/sdb/syh"
 MODEL_CONFIG = dict(name="new_former", 
                     rgb_branch="S", 
                     rgb_pretrained=os.path.join(MEMORY_PATH, "pretrained", "convnext_small_1k_224_ema.pth"),
                     d_branch="b0",
-                    d_pretrained=None)
+                    d_pretrained=None,
+                    version='v2')
 print("===================Train Config===================")
 for k, v in MODEL_CONFIG.items():
     print(f"{k}: {v}")
@@ -124,12 +125,20 @@ def train():
 
     num_train = len(train_data)
 
-    model = New_Asymformer(rgb_branch=MODEL_CONFIG['rgb_branch'],
-                           rgb_pretrained=MODEL_CONFIG['rgb_pretrained'],
-                           d_branch=MODEL_CONFIG['d_branch'],
-                           d_pretrained=MODEL_CONFIG['d_pretrained'],
-                           downsample_ratio=DOWNSAMPLE_RATIO,
-                           num_classes=40)
+    if MODEL_CONFIG['version'] == 'v1':
+        model = New_Asymformer(rgb_branch=MODEL_CONFIG['rgb_branch'],
+                            rgb_pretrained=MODEL_CONFIG['rgb_pretrained'],
+                            d_branch=MODEL_CONFIG['d_branch'],
+                            d_pretrained=MODEL_CONFIG['d_pretrained'],
+                            downsample_ratio=DOWNSAMPLE_RATIO,
+                            num_classes=40)
+    elif MODEL_CONFIG['version'] == 'v2':
+        model = New_Asymformer_v2(rgb_branch=MODEL_CONFIG['rgb_branch'],
+                            rgb_pretrained=MODEL_CONFIG['rgb_pretrained'],
+                            d_branch=MODEL_CONFIG['d_branch'],
+                            d_pretrained=MODEL_CONFIG['d_pretrained'],
+                            downsample_ratio=DOWNSAMPLE_RATIO,
+                            num_classes=40)
 
     CEL_weighted = nn.CrossEntropyLoss(reduction='mean', ignore_index=-1)
 

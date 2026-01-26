@@ -10,7 +10,8 @@ import torch.optim
 import torchvision.transforms as transforms
 from torch import nn
 from src.B0_S import B0_S
-import NYUv2_dataloader as Data
+# import NYUv2_dataloader as Data
+import SUNRGBD.SUNRGBD_dataloader as Data
 from utils.utils import save_ckpt
 from utils.utils import load_ckpt
 from utils.utils import print_log
@@ -19,11 +20,11 @@ import random
 torch.backends.cudnn.enabled = True
 torch.backends.cudnn.benchmark = True
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '7'
-DOWNSAMPLE_RATIO = 0.9
+os.environ['CUDA_VISIBLE_DEVICES'] = '6'
+DOWNSAMPLE_RATIO = 0.6
 MEMORY_PATH = "/mnt/sdb/syh"
-dataset_path = os.path.join(MEMORY_PATH, "datasets", "data")
-ckpt_path = os.path.join(MEMORY_PATH, "asym_checkpoints", f"B0_S_{DOWNSAMPLE_RATIO}_bsize8")
+dataset_path = os.path.join(MEMORY_PATH, "datasets", "SUNRGBD_numpy")
+ckpt_path = os.path.join(MEMORY_PATH, "asym_checkpoints", f"SUN_B0_S_{DOWNSAMPLE_RATIO}_bsize8")
 
 parser = argparse.ArgumentParser(description='RGBD Sementic Segmentation')
 parser.add_argument('--data-dir', default=dataset_path, metavar='DIR',
@@ -32,7 +33,7 @@ parser.add_argument('--cuda', action='store_true', default=True,
                     help='enables CUDA training')
 parser.add_argument('-j', '--workers', default=8, type=int, metavar='N',
                     help='number of data loading workers (default: 8)')
-parser.add_argument('--epochs', default=500, type=int, metavar='N',
+parser.add_argument('--epochs', default=200, type=int, metavar='N',
                     help='number of total epochs to run (default: 1500)')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
@@ -96,7 +97,7 @@ def create_lr_scheduler(optimizer,
 
 def train():
     setup_seed(2333)
-    train_data = Data.RGBD_Dataset(transform=transforms.Compose([Data.scaleNorm(),
+    train_data = Data.SUNRGBD(transform=transforms.Compose([Data.scaleNorm(),
                                                                  Data.RandomScale((1.0, 1.4, 2.0)),
                                                                  Data.RandomHSV((0.9, 1.1),
                                                                                 (0.9, 1.1),

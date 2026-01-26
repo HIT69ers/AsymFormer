@@ -18,6 +18,40 @@ class SAM(nn.Module):
         return output 
     
 
+class CAM(nn.Module):
+    def __init__(self, channels, r):
+        super(CAM, self).__init__()
+        self.channels = channels
+        self.r = r
+        self.linear = nn.Sequential(
+            nn.Linear(in_features=self.channels, out_features=self.channels//self.r, bias=True),
+            nn.ReLU(inplace=True),
+            nn.Linear(in_features=self.channels//self.r, out_features=self.channels, bias=True))
+
+    def forward(self, x):
+        max = F.adaptive_max_pool2d(x, output_size=1)
+        avg = F.adaptive_avg_pool2d(x, output_size=1)
+        b, c, _, _ = x.size()
+        linear_max = self.linear(max.view(b,c)).view(b, c, 1, 1)
+        linear_avg = self.linear(avg.view(b,c)).view(b, c, 1, 1)
+        output = linear_max + linear_avg
+        output = F.sigmoid(output) * x
+        return output
+    
+class CBAM(nn.Module):
+    def __init__(self, channels, r):
+        super(CBAM, self).__init__()
+        self.channels = channels
+        self.r = r
+        self.sam = SAM(bias=False)
+        self.cam = CAM(channels=self.channels, r=self.r)
+
+    def forward(self, x):
+        output = self.cam(x)
+        output = self.sam(output)
+        return output + x
+    
+
 def channel_shuffle(x, groups: int):
     batchsize, N, num_channels = x.size()
     channels_per_group = num_channels // groups
@@ -143,6 +177,28 @@ class SCC_Module(nn.Module):
         channel = inc_rgb + inc_depth2
 
         self.fus_atten = SpatialAttention_new(in_channels=channel)
+        self.conv1 = nn.Conv2d(channel, inc_depth2, kernel_size=1, bias=False)
+        self.bn = nn.BatchNorm2d(inc_depth2)
+
+        self.cross_atten = Cross_Atten_Lite_split(inc_depth2, inc_rgb)
+
+    def forward(self, depth_out, rgb_out):
+        fus_s = torch.cat([depth_out, rgb_out], dim=1)
+        fus_s = self.fus_atten(fus_s)
+        fus_s = self.conv1(fus_s)
+        fus_s = self.bn(fus_s)
+
+        fus_s = self.cross_atten(fus_s, depth_out, rgb_out)
+
+        return fus_s
+    
+
+class SCC_Module_v2(nn.Module):
+    def __init__(self, inc_depth2, inc_rgb):
+        super(SCC_Module_v2, self).__init__()
+        channel = inc_rgb + inc_depth2
+
+        self.fus_atten = CBAM(channels=channel, r=8)
         self.conv1 = nn.Conv2d(channel, inc_depth2, kernel_size=1, bias=False)
         self.bn = nn.BatchNorm2d(inc_depth2)
 
