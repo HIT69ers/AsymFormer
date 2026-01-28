@@ -10,7 +10,7 @@ import cv2
 from collections import OrderedDict
 import torch.optim
 import NYUv2_dataloader as Data
-from src.new_asymformer import New_Asymformer
+from src.new_asymformer import New_Asymformer, New_Asymformer_v2
 from utils import utils
 from utils.utils import load_ckpt, intersectionAndUnion, AverageMeter, accuracy, macc
 
@@ -23,7 +23,8 @@ MODEL_CONFIG = dict(name="new_former",
                     rgb_branch="S", 
                     rgb_pretrained=os.path.join(MEMORY_PATH, "pretrained", "convnext_small_1k_224_ema.pth"),
                     d_branch="b0",
-                    d_pretrained=None)
+                    d_pretrained=None,
+                    version='v2')
 print("===================Train Config===================")
 for k, v in MODEL_CONFIG.items():
     print(f"{k}: {v}")
@@ -35,12 +36,20 @@ ckpt_dir = os.path.join(MEMORY_PATH, "asym_checkpoints", MODEL_CONFIG['name'] + 
                         str(DOWNSAMPLE_RATIO))
 pth_dir = os.path.join(ckpt_dir, f"ckpt_epoch_{EPOCH}.00.pth")
 
-model = New_Asymformer(rgb_branch=MODEL_CONFIG['rgb_branch'],
-                rgb_pretrained=MODEL_CONFIG['rgb_pretrained'],
-                d_branch=MODEL_CONFIG['d_branch'],
-                d_pretrained=MODEL_CONFIG['d_pretrained'],
-                downsample_ratio=DOWNSAMPLE_RATIO,
-                num_classes=40)
+if MODEL_CONFIG['version'] == 'v1':
+    model = New_Asymformer(rgb_branch=MODEL_CONFIG['rgb_branch'],
+                        rgb_pretrained=MODEL_CONFIG['rgb_pretrained'],
+                        d_branch=MODEL_CONFIG['d_branch'],
+                        d_pretrained=MODEL_CONFIG['d_pretrained'],
+                        downsample_ratio=DOWNSAMPLE_RATIO,
+                        num_classes=40)
+elif MODEL_CONFIG['version'] == 'v2':
+    model = New_Asymformer_v2(rgb_branch=MODEL_CONFIG['rgb_branch'],
+                        rgb_pretrained=MODEL_CONFIG['rgb_pretrained'],
+                        d_branch=MODEL_CONFIG['d_branch'],
+                        d_pretrained=MODEL_CONFIG['d_pretrained'],
+                        downsample_ratio=DOWNSAMPLE_RATIO,
+                        num_classes=40)
 print(f"==============================")
 print(f"Eval New_asymformer_{DOWNSAMPLE_RATIO}_epoch-{EPOCH}")
 

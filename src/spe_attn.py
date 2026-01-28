@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from ddf import DDFPack
 
 
 class SAM(nn.Module):
@@ -199,6 +200,28 @@ class SCC_Module_v2(nn.Module):
         channel = inc_rgb + inc_depth2
 
         self.fus_atten = CBAM(channels=channel, r=8)
+        self.conv1 = nn.Conv2d(channel, inc_depth2, kernel_size=1, bias=False)
+        self.bn = nn.BatchNorm2d(inc_depth2)
+
+        self.cross_atten = Cross_Atten_Lite_split(inc_depth2, inc_rgb)
+
+    def forward(self, depth_out, rgb_out):
+        fus_s = torch.cat([depth_out, rgb_out], dim=1)
+        fus_s = self.fus_atten(fus_s)
+        fus_s = self.conv1(fus_s)
+        fus_s = self.bn(fus_s)
+
+        fus_s = self.cross_atten(fus_s, depth_out, rgb_out)
+
+        return fus_s
+    
+
+class SCC_Module_v3(nn.Module):
+    def __init__(self, inc_depth2, inc_rgb):
+        super(SCC_Module_v3, self).__init__()
+        channel = inc_rgb + inc_depth2
+
+        self.fus_atten = DDFPack(in_channels=channel, kernel_size=3, se_ratio=0.5)
         self.conv1 = nn.Conv2d(channel, inc_depth2, kernel_size=1, bias=False)
         self.bn = nn.BatchNorm2d(inc_depth2)
 
