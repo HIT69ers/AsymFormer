@@ -21,7 +21,7 @@ torch.backends.cudnn.enabled = True
 torch.backends.cudnn.benchmark = True
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '7'
-DOWNSAMPLE_RATIO = 0.6
+DOWNSAMPLE_RATIO = 0.8
 MEMORY_PATH = "/mnt/syh"
 MODEL_CONFIG = dict(name="new_former", 
                     rgb_branch="S", 
