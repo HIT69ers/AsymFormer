@@ -10,46 +10,61 @@ import cv2
 from collections import OrderedDict
 import torch.optim
 import NYUv2_dataloader as Data
-from src.new_asymformer import New_Asymformer, New_Asymformer_v2
+from src.new_asymformer import New_Asymformer, New_Asymformer_v2, New_Asymformer_v3, New_Asymformer_v3_loss
 from utils import utils
 from utils.utils import load_ckpt, intersectionAndUnion, AverageMeter, accuracy, macc
 
 
-EPOCH = 500
+EPOCH = 350
 os.environ['CUDA_VISIBLE_DEVICES'] = '7'
-DOWNSAMPLE_RATIO = 0.6
-MEMORY_PATH = "/mnt/sdb/syh"
+DOWNSAMPLE_RATIO = 1.0
+MEMORY_PATH = "/mnt/syh"
 MODEL_CONFIG = dict(name="new_former", 
                     rgb_branch="S", 
-                    rgb_pretrained=os.path.join(MEMORY_PATH, "pretrained", "convnext_small_1k_224_ema.pth"),
+                    rgb_pretrained=os.path.join(MEMORY_PATH, "pretrained", "convnext", "convnext_small_1k_224_ema.pth"),
                     d_branch="b0",
                     d_pretrained=None,
-                    version='v2')
+                    version='v3',
+                    with_4=True,
+                    with_8=True,
+                    with_16=True,
+                    with_32=True)
 print("===================Train Config===================")
 for k, v in MODEL_CONFIG.items():
     print(f"{k}: {v}")
 print(f"Downsample_ratio: {DOWNSAMPLE_RATIO}")
 print("==================================================")
 
-dataset_path = os.path.join(MEMORY_PATH, "datasets", "data")
-ckpt_dir = os.path.join(MEMORY_PATH, "asym_checkpoints", MODEL_CONFIG['name'] + "_" + MODEL_CONFIG['rgb_branch'] + "_" + MODEL_CONFIG['d_branch'] + '_' +\
-                        str(DOWNSAMPLE_RATIO))
+dataset_path = os.path.join(MEMORY_PATH, "datasets", "NYUv2", "data")
+# ckpt_dir = os.path.join(MEMORY_PATH, "asym_checkpoints", MODEL_CONFIG['name'] + "_" + MODEL_CONFIG['rgb_branch'] + "_" + MODEL_CONFIG['d_branch'] + '_' +\
+#                         str(DOWNSAMPLE_RATIO))
+ckpt_dir = "/mnt/syh/asym_checkpoints/new_former_S_b0_1.0_v3_2026-02-03_23:37:33_4_8_16_32/"
 pth_dir = os.path.join(ckpt_dir, f"ckpt_epoch_{EPOCH}.00.pth")
 
+######################################
+# Network
 if MODEL_CONFIG['version'] == 'v1':
-    model = New_Asymformer(rgb_branch=MODEL_CONFIG['rgb_branch'],
-                        rgb_pretrained=MODEL_CONFIG['rgb_pretrained'],
-                        d_branch=MODEL_CONFIG['d_branch'],
-                        d_pretrained=MODEL_CONFIG['d_pretrained'],
-                        downsample_ratio=DOWNSAMPLE_RATIO,
-                        num_classes=40)
+    network = New_Asymformer
 elif MODEL_CONFIG['version'] == 'v2':
-    model = New_Asymformer_v2(rgb_branch=MODEL_CONFIG['rgb_branch'],
-                        rgb_pretrained=MODEL_CONFIG['rgb_pretrained'],
-                        d_branch=MODEL_CONFIG['d_branch'],
-                        d_pretrained=MODEL_CONFIG['d_pretrained'],
-                        downsample_ratio=DOWNSAMPLE_RATIO,
-                        num_classes=40)
+    network = New_Asymformer_v2
+elif MODEL_CONFIG['version'] == 'v3':
+    if not (MODEL_CONFIG['with_4'] or MODEL_CONFIG['with_8'] or MODEL_CONFIG['with_16'] or MODEL_CONFIG['with_32']):
+        network = New_Asymformer_v3
+    else:
+        print(f"Using detail loss")
+        network = New_Asymformer_v3_loss
+    
+model = network(rgb_branch=MODEL_CONFIG['rgb_branch'],
+                rgb_pretrained=MODEL_CONFIG['rgb_pretrained'],
+                d_branch=MODEL_CONFIG['d_branch'],
+                d_pretrained=MODEL_CONFIG['d_pretrained'],
+                downsample_ratio=DOWNSAMPLE_RATIO,
+                num_classes=40,
+                with_4=MODEL_CONFIG['with_4'],
+                with_8=MODEL_CONFIG['with_8'],
+                with_16=MODEL_CONFIG['with_16'],
+                with_32=MODEL_CONFIG['with_32'])
+#####################################
 print(f"==============================")
 print(f"Eval New_asymformer_{DOWNSAMPLE_RATIO}_epoch-{EPOCH}")
 

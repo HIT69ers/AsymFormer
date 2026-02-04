@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 import torch.optim
 import torchvision.transforms as transforms
 from torch import nn
-from src.new_asymformer import New_Asymformer, New_Asymformer_v2, New_Asymformer_v3
+from src.new_asymformer import New_Asymformer, New_Asymformer_v2, New_Asymformer_v3, New_Asymformer_v3_loss
 import NYUv2_dataloader as Data
 from utils.utils import save_ckpt
 from utils.utils import load_ckpt
@@ -17,27 +17,49 @@ from utils.utils import print_log
 import random
 import datetime
 
+from src.loss.detail_loss import DetailAggregateLoss
+
 torch.backends.cudnn.enabled = True
 torch.backends.cudnn.benchmark = True
 
+IGNORE_INDEX = -1  
 os.environ['CUDA_VISIBLE_DEVICES'] = '7'
-DOWNSAMPLE_RATIO = 0.8
+DOWNSAMPLE_RATIO = 0.6
 MEMORY_PATH = "/mnt/syh"
 MODEL_CONFIG = dict(name="new_former", 
                     rgb_branch="S", 
                     rgb_pretrained=os.path.join(MEMORY_PATH, "pretrained", "convnext", "convnext_small_1k_224_ema.pth"),
                     d_branch="b0",
                     d_pretrained=None,
-                    version='v3')
+                    version='v3',
+                    with_4=True,
+                    with_8=False,
+                    with_16=False,
+                    with_32=False)
 print("===================Train Config===================")
 for k, v in MODEL_CONFIG.items():
     print(f"{k}: {v}")
 print(f"Downsample_ratio: {DOWNSAMPLE_RATIO}")
+print(f"Ignore_index: {IGNORE_INDEX}")
 print("==================================================")
+
+detail_str = ""
+if MODEL_CONFIG['with_4']:
+    detail_str += "_4"
+if MODEL_CONFIG['with_8']:
+    detail_str += "_8"
+if MODEL_CONFIG['with_16']:
+    detail_str += "_16"
+if MODEL_CONFIG['with_32']:
+    detail_str += '_32'
+
 
 dataset_path = os.path.join(MEMORY_PATH, "datasets", "NYUv2", "data")
 ckpt_dir = os.path.join(MEMORY_PATH, "asym_checkpoints", MODEL_CONFIG['name'] + "_" + MODEL_CONFIG['rgb_branch'] + "_" + MODEL_CONFIG['d_branch'] + '_' +\
-                        str(DOWNSAMPLE_RATIO) + "_" + MODEL_CONFIG['version'] + "_" + datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S"))
+                        str(DOWNSAMPLE_RATIO) + "_" + MODEL_CONFIG['version'] + "_" + datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S") + detail_str)
+
+# print(f"use detail loss in the end")
+# ckpt_dir += "_end"
 
 parser = argparse.ArgumentParser(description='RGBD Sementic Segmentation')
 parser.add_argument('--data-dir', default=dataset_path, metavar='DIR',
@@ -133,17 +155,29 @@ def train():
     elif MODEL_CONFIG['version'] == 'v2':
         network = New_Asymformer_v2
     elif MODEL_CONFIG['version'] == 'v3':
-        network = New_Asymformer_v3
+        if not (MODEL_CONFIG['with_4'] or MODEL_CONFIG['with_8'] or MODEL_CONFIG['with_16'] or MODEL_CONFIG['with_32']):
+            network = New_Asymformer_v3
+        else:
+            print(f"Using detail loss")
+            network = New_Asymformer_v3_loss
         
     model = network(rgb_branch=MODEL_CONFIG['rgb_branch'],
-                            rgb_pretrained=MODEL_CONFIG['rgb_pretrained'],
-                            d_branch=MODEL_CONFIG['d_branch'],
-                            d_pretrained=MODEL_CONFIG['d_pretrained'],
-                            downsample_ratio=DOWNSAMPLE_RATIO,
-                            num_classes=40)
+                    rgb_pretrained=MODEL_CONFIG['rgb_pretrained'],
+                    d_branch=MODEL_CONFIG['d_branch'],
+                    d_pretrained=MODEL_CONFIG['d_pretrained'],
+                    downsample_ratio=DOWNSAMPLE_RATIO,
+                    num_classes=40,
+                    with_4=MODEL_CONFIG['with_4'],
+                    with_8=MODEL_CONFIG['with_8'],
+                    with_16=MODEL_CONFIG['with_16'],
+                    with_32=MODEL_CONFIG['with_32'])
     #####################################
 
-    CEL_weighted = nn.CrossEntropyLoss(reduction='mean', ignore_index=-1)
+    ##################################### 
+    # Loss
+    CEL_weighted = nn.CrossEntropyLoss(reduction='mean', ignore_index=IGNORE_INDEX)
+    detail_loss = DetailAggregateLoss()
+    #####################################
 
     model.train()
     model.to(device)
@@ -174,8 +208,50 @@ def train():
             target_scales = [sample[s].to(device) for s in ['label']]
 
             optimizer.zero_grad()
-            out = model(image, depth)
+
+            # Inference
+            if (not MODEL_CONFIG['with_4']) and (not MODEL_CONFIG['with_8']) and (not MODEL_CONFIG['with_16']) and (not MODEL_CONFIG['with_32']):
+                out = model(image, depth)
+            if (not MODEL_CONFIG['with_4']) and (not MODEL_CONFIG['with_8']) and (not MODEL_CONFIG['with_16']) and MODEL_CONFIG['with_32']:
+                out, out32 = model(image, depth)
+            if (not MODEL_CONFIG['with_4']) and (not MODEL_CONFIG['with_8']) and MODEL_CONFIG['with_16'] and MODEL_CONFIG['with_32']:
+                out, out16, out32 = model(image, depth)
+            if (not MODEL_CONFIG['with_4']) and MODEL_CONFIG['with_8'] and MODEL_CONFIG['with_16'] and MODEL_CONFIG['with_32']:
+                out, out8, out16, out32 = model(image, depth)
+            if MODEL_CONFIG['with_4'] and MODEL_CONFIG['with_8'] and MODEL_CONFIG['with_16'] and MODEL_CONFIG['with_32']:
+                out, out4, out8, out16, out32 = model(image, depth)
+            if MODEL_CONFIG['with_4'] and (not MODEL_CONFIG['with_8']) and (not MODEL_CONFIG['with_16']) and (not MODEL_CONFIG['with_32']):
+                out, out4 = model(image, depth)
+            
+            # calculate loss
             loss = CEL_weighted(out, (target_scales[0] - 1).long())
+
+            boundery_bce_loss = 0.
+            boundery_dice_loss = 0.
+
+            # if 'end' in ckpt_dir:
+            #     boundery_bce_loss, boundery_dice_loss = detail_loss(out, target_scales[0].long())
+
+            if MODEL_CONFIG['with_4']:
+                boundery_bce_loss4, boundery_dice_loss4 = detail_loss(out4, target_scales[0])
+                boundery_bce_loss += boundery_bce_loss4
+                boundery_dice_loss += boundery_dice_loss4
+            if MODEL_CONFIG['with_8']:
+                boundery_bce_loss8, boundery_dice_loss8 = detail_loss(out8, target_scales[0])
+                boundery_bce_loss += boundery_bce_loss8
+                boundery_dice_loss += boundery_dice_loss8
+            if MODEL_CONFIG['with_16']:
+                boundery_bce_loss16, boundery_dice_loss16 = detail_loss(out16, target_scales[0])
+                boundery_bce_loss += boundery_bce_loss16
+                boundery_dice_loss += boundery_dice_loss16
+            if MODEL_CONFIG['with_32']:
+                boundery_bce_loss32, boundery_dice_loss32 = detail_loss(out32, target_scales[0])
+                boundery_bce_loss += boundery_bce_loss32
+                boundery_dice_loss += boundery_dice_loss32
+
+            loss += boundery_bce_loss + boundery_dice_loss
+
+            # iteration
             loss.backward()
             optimizer.step()
             lr_scheduler.step()
