@@ -10,12 +10,13 @@ import cv2
 from collections import OrderedDict
 import torch.optim
 import NYUv2_dataloader as Data
-from src.new_asymformer import New_Asymformer, New_Asymformer_v2, New_Asymformer_v3, New_Asymformer_v3_loss
+from src.new_asymformer import New_Asymformer, New_Asymformer_v2, New_Asymformer_v3, New_Asymformer_v3_loss, New_Asymformer_v3_dloss
 from utils import utils
 from utils.utils import load_ckpt, intersectionAndUnion, AverageMeter, accuracy, macc
 
 
-EPOCH = 350
+EPOCH = 375
+DECODER_LOSS = True
 os.environ['CUDA_VISIBLE_DEVICES'] = '7'
 DOWNSAMPLE_RATIO = 1.0
 MEMORY_PATH = "/mnt/syh"
@@ -25,9 +26,9 @@ MODEL_CONFIG = dict(name="new_former",
                     d_branch="b0",
                     d_pretrained=None,
                     version='v3',
-                    with_4=True,
-                    with_8=True,
-                    with_16=True,
+                    with_4=False,
+                    with_8=False,
+                    with_16=False,
                     with_32=True)
 print("===================Train Config===================")
 for k, v in MODEL_CONFIG.items():
@@ -38,7 +39,7 @@ print("==================================================")
 dataset_path = os.path.join(MEMORY_PATH, "datasets", "NYUv2", "data")
 # ckpt_dir = os.path.join(MEMORY_PATH, "asym_checkpoints", MODEL_CONFIG['name'] + "_" + MODEL_CONFIG['rgb_branch'] + "_" + MODEL_CONFIG['d_branch'] + '_' +\
 #                         str(DOWNSAMPLE_RATIO))
-ckpt_dir = "/mnt/syh/asym_checkpoints/new_former_S_b0_1.0_v3_2026-02-03_23:37:33_4_8_16_32/"
+ckpt_dir = "/mnt/syh/asym_checkpoints/new_former_S_b0_1.0_v3_2026-02-04_23:28:02_dloss_4/"
 pth_dir = os.path.join(ckpt_dir, f"ckpt_epoch_{EPOCH}.00.pth")
 
 ######################################
@@ -52,7 +53,11 @@ elif MODEL_CONFIG['version'] == 'v3':
         network = New_Asymformer_v3
     else:
         print(f"Using detail loss")
-        network = New_Asymformer_v3_loss
+        if not DECODER_LOSS:
+            network = New_Asymformer_v3_loss
+        else:
+            print(f"Decoder detail loss")
+            network = New_Asymformer_v3_dloss
     
 model = network(rgb_branch=MODEL_CONFIG['rgb_branch'],
                 rgb_pretrained=MODEL_CONFIG['rgb_pretrained'],

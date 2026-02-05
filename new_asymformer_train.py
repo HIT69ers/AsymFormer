@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 import torch.optim
 import torchvision.transforms as transforms
 from torch import nn
-from src.new_asymformer import New_Asymformer, New_Asymformer_v2, New_Asymformer_v3, New_Asymformer_v3_loss
+from src.new_asymformer import New_Asymformer, New_Asymformer_v2, New_Asymformer_v3, New_Asymformer_v3_loss, New_Asymformer_v3_dloss
 import NYUv2_dataloader as Data
 from utils.utils import save_ckpt
 from utils.utils import load_ckpt
@@ -23,8 +23,9 @@ torch.backends.cudnn.enabled = True
 torch.backends.cudnn.benchmark = True
 
 IGNORE_INDEX = -1  
-os.environ['CUDA_VISIBLE_DEVICES'] = '7'
-DOWNSAMPLE_RATIO = 0.6
+DECODER_LOSS = True
+os.environ['CUDA_VISIBLE_DEVICES'] = '5'
+DOWNSAMPLE_RATIO = 1.0
 MEMORY_PATH = "/mnt/syh"
 MODEL_CONFIG = dict(name="new_former", 
                     rgb_branch="S", 
@@ -32,10 +33,10 @@ MODEL_CONFIG = dict(name="new_former",
                     d_branch="b0",
                     d_pretrained=None,
                     version='v3',
-                    with_4=True,
+                    with_4=False,
                     with_8=False,
                     with_16=False,
-                    with_32=False)
+                    with_32=True)
 print("===================Train Config===================")
 for k, v in MODEL_CONFIG.items():
     print(f"{k}: {v}")
@@ -44,6 +45,8 @@ print(f"Ignore_index: {IGNORE_INDEX}")
 print("==================================================")
 
 detail_str = ""
+if DECODER_LOSS:
+    detail_str += "_dloss"
 if MODEL_CONFIG['with_4']:
     detail_str += "_4"
 if MODEL_CONFIG['with_8']:
@@ -52,6 +55,8 @@ if MODEL_CONFIG['with_16']:
     detail_str += "_16"
 if MODEL_CONFIG['with_32']:
     detail_str += '_32'
+
+detail_str += "_only_dice"
 
 
 dataset_path = os.path.join(MEMORY_PATH, "datasets", "NYUv2", "data")
@@ -159,7 +164,11 @@ def train():
             network = New_Asymformer_v3
         else:
             print(f"Using detail loss")
-            network = New_Asymformer_v3_loss
+            if not DECODER_LOSS:
+                network = New_Asymformer_v3_loss
+            else:
+                print(f"Decoder detail loss")
+                network = New_Asymformer_v3_dloss
         
     model = network(rgb_branch=MODEL_CONFIG['rgb_branch'],
                     rgb_pretrained=MODEL_CONFIG['rgb_pretrained'],
@@ -249,7 +258,12 @@ def train():
                 boundery_bce_loss += boundery_bce_loss32
                 boundery_dice_loss += boundery_dice_loss32
 
-            loss += boundery_bce_loss + boundery_dice_loss
+            # bce + dice
+            # loss += boundery_bce_loss + boundery_dice_loss
+            # only bce
+            # loss += boundery_bce_loss
+            # only dice
+            loss += boundery_dice_loss
 
             # iteration
             loss.backward()
@@ -274,7 +288,10 @@ def train():
 
 
 if __name__ == '__main__':
-    if not os.path.exists(args.ckpt_dir):
-        os.mkdir(args.ckpt_dir)
+    try:
+        if not os.path.exists(args.ckpt_dir):
+            os.mkdir(args.ckpt_dir)
 
-    train()
+        train()
+    except:
+        os.remove(args.ckpt_dir)

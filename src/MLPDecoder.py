@@ -5,6 +5,8 @@ import torch
 from torch.nn.modules import module
 import torch.nn.functional as F
 
+from src.head.detail_head import BiSeNetOutput
+
 class MLP(nn.Module):
     """
     Linear Embedding: 
@@ -26,7 +28,7 @@ class DecoderHead(nn.Module):
                  dropout_ratio=0.1,
                  norm_layer=nn.BatchNorm2d,
                  embed_dim=768,
-                 align_corners=False):
+                 align_corners=False, **kwargs):
         
         super(DecoderHead, self).__init__()
         self.num_classes = num_classes
@@ -79,5 +81,108 @@ class DecoderHead(nn.Module):
         x = self.linear_pred(x)
 
         return x
+    
+
+class DecoderHead_loss(nn.Module):
+    def __init__(self,
+                 in_channels=[64, 128, 320, 512],
+                 num_classes=40,
+                 dropout_ratio=0.1,
+                 norm_layer=nn.BatchNorm2d,
+                 embed_dim=768,
+                 align_corners=False,
+                 with_4=False, with_8=False, with_16=False, with_32=False, **kwargs):
+        
+        super(DecoderHead_loss, self).__init__()
+        self.num_classes = num_classes
+        self.dropout_ratio = dropout_ratio
+        self.align_corners = align_corners
+        
+        self.in_channels = in_channels
+        
+        if dropout_ratio > 0:
+            self.dropout = nn.Dropout2d(dropout_ratio)
+        else:
+            self.dropout = None
+
+        c1_in_channels, c2_in_channels, c3_in_channels, c4_in_channels = self.in_channels
+
+        embedding_dim = embed_dim
+        self.linear_c4 = MLP(input_dim=c4_in_channels, embed_dim=embedding_dim)
+        self.linear_c3 = MLP(input_dim=c3_in_channels, embed_dim=embedding_dim)
+        self.linear_c2 = MLP(input_dim=c2_in_channels, embed_dim=embedding_dim)
+        self.linear_c1 = MLP(input_dim=c1_in_channels, embed_dim=embedding_dim)
+        
+        self.linear_fuse = nn.Sequential(
+                            nn.Conv2d(in_channels=embedding_dim*4, out_channels=embedding_dim, kernel_size=1),
+                            norm_layer(embedding_dim),
+                            nn.ReLU(inplace=True)
+                            )
+                            
+        self.linear_pred = nn.Conv2d(embedding_dim, self.num_classes, kernel_size=1)
+
+        self.with_4 = with_4
+        self.with_8 = with_8
+        self.with_16 = with_16
+        self.with_32 = with_32
+
+        if self.training:
+            if self.with_4:
+                self.out4_head = BiSeNetOutput(in_chan=embedding_dim, mid_chan=64, n_classes=1)
+            if self.with_8:
+                self.out8_head = BiSeNetOutput(in_chan=embedding_dim, mid_chan=64, n_classes=1)
+            if self.with_16:
+                self.out16_head = BiSeNetOutput(in_chan=embedding_dim, mid_chan=64, n_classes=1)
+            if self.with_32:
+                self.out32_head = BiSeNetOutput(in_chan=embedding_dim, mid_chan=64, n_classes=1)
+       
+    def forward(self, inputs):
+        # len=4, 1/4,1/8,1/16,1/32
+        c1, c2, c3, c4 = inputs
+        
+        ############## MLP decoder on C1-C4 ###########
+        n, _, h, w = c4.shape
+
+        _c4 = self.linear_c4(c4).permute(0,2,1).reshape(n, -1, c4.shape[2], c4.shape[3])
+        _nc4 = F.interpolate(_c4, size=c1.size()[2:],mode='bilinear',align_corners=self.align_corners)
+
+        _c3 = self.linear_c3(c3).permute(0,2,1).reshape(n, -1, c3.shape[2], c3.shape[3])
+        _nc3 = F.interpolate(_c3, size=c1.size()[2:],mode='bilinear',align_corners=self.align_corners)
+
+        _c2 = self.linear_c2(c2).permute(0,2,1).reshape(n, -1, c2.shape[2], c2.shape[3])
+        _nc2 = F.interpolate(_c2, size=c1.size()[2:],mode='bilinear',align_corners=self.align_corners)
+
+        _c1 = self.linear_c1(c1).permute(0,2,1).reshape(n, -1, c1.shape[2], c1.shape[3])
+
+        _c = self.linear_fuse(torch.cat([_nc4, _nc3, _nc2, _c1], dim=1))
+        x = self.dropout(_c)
+        x = self.linear_pred(x)
+
+        if self.training:
+            if (not self.with_4) and (not self.with_8) and (not self.with_16) and (not self.with_32):
+                return x
+            if (not self.with_4) and (not self.with_8) and (not self.with_16) and self.with_32:
+                out32 = self.out32_head(_c4)
+                return x, out32
+            if (not self.with_4) and (not self.with_8) and self.with_16 and self.with_32:
+                out16 =self.out16_head(_c3)
+                out32 = self.out32_head(_c4)
+                return x, out16, out32
+            if (not self.with_4) and self.with_8 and self.with_16 and self.with_32:
+                out8 = self.out8_head(_c2)
+                out16 = self.out16_head(_c3)
+                out32 = self.out32_head(_c4)
+                return x, out8, out16, out32
+            if self.with_4 and self.with_8 and self.with_16 and self.with_32:
+                out4 = self.out4_head(_c)
+                out8 = self.out8_head(_c2)
+                out16 = self.out16_head(_c3)
+                out32 = self.out32_head(_c4)
+                return x, out4, out8, out16, out32
+            if self.with_4 and (not self.with_8) and (not self.with_16) and (not self.with_32):
+                out4 = self.out4_head(_c)
+                return x, out4
+        else:
+            return x
 
         
