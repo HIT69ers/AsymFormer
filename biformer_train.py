@@ -3,7 +3,6 @@ Our code is partially adapted from RedNet (https://github.com/JinDongJiang/RedNe
 '''
 import os
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '7'
 import argparse
 import time
 import torch
@@ -20,6 +19,9 @@ import random
 
 torch.backends.cudnn.enabled = True
 torch.backends.cudnn.benchmark = True
+
+os.environ['CUDA_VISIBLE_DEVICES'] = '7'
+DOWNSAMPLE_RATIO = 0.7
 
 parser = argparse.ArgumentParser(description='RGBD Sementic Segmentation')
 parser.add_argument('--data-dir', default="/mnt/syh/datasets/NYUv2/data/", metavar='DIR',
@@ -44,14 +46,14 @@ parser.add_argument('--save-epoch-freq', '-s', default=25, type=int,
                     metavar='N', help='save epoch frequency (default: 5)')
 parser.add_argument('--last-ckpt', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
-parser.add_argument('--ckpt-dir', default='/mnt/syh/asym_checkpoints/Biformer_b3_b0_0.7_M1_bsize8/', metavar='DIR',
+parser.add_argument('--ckpt-dir', default=f'/mnt/syh/asym_checkpoints/Biformer_b3_b0_{DOWNSAMPLE_RATIO}_M1_bsize8/', metavar='DIR',
                     help='path to save checkpoints')
 parser.add_argument('--checkpoint', action='store_true', default=False,
                     help='Using Pytorch checkpoint or not')
 parser.add_argument('--amp', action='store_true', default=False,
                     help="autocast train")
 
-DOWNSAMPLE_RATIO = 0.7
+
 
 args = parser.parse_args()
 device = torch.device("cuda:0" if args.cuda and torch.cuda.is_available() else "cpu")

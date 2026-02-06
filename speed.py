@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import init
 from collections import OrderedDict
+from thop import profile
 
 from src.new_asymformer import New_Asymformer_v3
 
@@ -66,11 +67,14 @@ if __name__ == '__main__':
         torch.cuda.synchronize()
         t_start = time.time()
         for _ in range(iterations):
-            model(input)
+            model(*input)
         torch.cuda.synchronize()
         torch.cuda.synchronize()
         elapsed_time = time.time() - t_start
         latency = elapsed_time / iterations * 1000
     torch.cuda.empty_cache()
     FPS = 1000 / latency
-    print(FPS)
+    print(round(FPS, 2))
+
+    flops, params = profile(model, inputs=input)
+    print("the flops is {}G,the params is {}M".format(round(flops / (10**9), 2), round(params / (10**6), 2)))
