@@ -9,13 +9,13 @@ from collections import OrderedDict
 from src.new_asymformer import New_Asymformer_v3
 
 
-DOWNSAMPLE_RATIO = 1.0
+DOWNSAMPLE_RATIO = 0.7
 MODEL_CONFIG = dict(name="new_former", 
                     rgb_branch="S", 
                     rgb_pretrained=None,
                     d_branch="b0",
                     d_pretrained=None,
-                    version='v3')
+                    version='v2')
 
 network = New_Asymformer_v3
 
@@ -38,12 +38,14 @@ if __name__ == '__main__':
     model.to(device)
     iterations = None
 
-    input = (torch.randn(1, 3, 480, 640).cuda(), torch.randn(1, 1, 480, 640).cuda())
-    # input = (torch.randn(1, 3, 480, 640).cuda(), torch.randn(1, 3, 480, 640).cuda())
+    input_rgb = torch.randn(1, 3, 480, 640).cuda()
+
+    input_depth = torch.randn(1, 1, 480, 640).cuda()
+    # input_depth = torch.randn(1, 3, 480, 640).cuda()
 
     with torch.no_grad():
         for _ in range(10):
-            model(*input)
+            model(input_rgb, input_depth)
 
         if iterations is None:
             elapsed_time = 0
@@ -53,7 +55,7 @@ if __name__ == '__main__':
                 torch.cuda.synchronize()
                 t_start = time.time()
                 for _ in range(iterations):
-                    model(*input)
+                    model(input_rgb, input_depth)
                 torch.cuda.synchronize()
                 torch.cuda.synchronize()
                 elapsed_time = time.time() - t_start
@@ -66,11 +68,14 @@ if __name__ == '__main__':
         torch.cuda.synchronize()
         t_start = time.time()
         for _ in range(iterations):
-            model(input)
+            model(input_rgb, input_depth)
         torch.cuda.synchronize()
         torch.cuda.synchronize()
         elapsed_time = time.time() - t_start
         latency = elapsed_time / iterations * 1000
     torch.cuda.empty_cache()
     FPS = 1000 / latency
-    print(FPS)
+    print(round(FPS, 2))
+
+    str_time = time.strftime(f"%Y-%m-%d %H:%M:%S", time.localtime())
+    print(f"Current time: {str_time}")
