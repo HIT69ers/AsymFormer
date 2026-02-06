@@ -10,7 +10,7 @@ from thop import profile
 from src.new_asymformer import New_Asymformer_v3
 
 
-DOWNSAMPLE_RATIO = 1.0
+DOWNSAMPLE_RATIO = 0.8
 MODEL_CONFIG = dict(name="new_former", 
                     rgb_branch="S", 
                     rgb_pretrained=None,
@@ -23,8 +23,10 @@ network = New_Asymformer_v3
 
 if __name__ == '__main__':
 
-
     import time
+    str_time = time.strftime(f"%Y-%m-%d %H:%M:%S", time.localtime())
+    print(f"Start time: {str_time}")
+
     device = torch.device('cuda')
     #torch.backends.cudnn.enabled = True
     #torch.backends.cudnn.benchmark = True
@@ -78,3 +80,6 @@ if __name__ == '__main__':
 
     flops, params = profile(model, inputs=input)
     print("the flops is {}G,the params is {}M".format(round(flops / (10**9), 2), round(params / (10**6), 2)))
+    print(f"-------------------------")
+    str_time = time.strftime(f"%Y-%m-%d %H:%M:%S", time.localtime())
+    print(f"End time: {str_time}")
