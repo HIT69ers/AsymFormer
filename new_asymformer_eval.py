@@ -39,7 +39,7 @@ print("==================================================")
 dataset_path = os.path.join(MEMORY_PATH, "datasets", "NYUv2", "data")
 # ckpt_dir = os.path.join(MEMORY_PATH, "asym_checkpoints", MODEL_CONFIG['name'] + "_" + MODEL_CONFIG['rgb_branch'] + "_" + MODEL_CONFIG['d_branch'] + '_' +\
 #                         str(DOWNSAMPLE_RATIO))
-ckpt_dir = "/mnt/syh/asym_checkpoints/new_former_S_b0_1.0_v3_2026-02-04_23:28:02_dloss_4/"
+ckpt_dir = "/mnt/syh/asym_checkpoints/new_former_S_b0_1.0_v3_2026-02-05_14:39:06_dloss_32_only_dice/"
 pth_dir = os.path.join(ckpt_dir, f"ckpt_epoch_{EPOCH}.00.pth")
 
 ######################################
