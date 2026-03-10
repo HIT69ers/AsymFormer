@@ -76,7 +76,7 @@ def get_segformer_backbone(shape='b0', pretrained=None):
     return model_dict
 
 
-rgb_backbone = get_convnextv2_backbone()
+rgb_backbone = get_convnextv2_backbone(pretrained=None)
 d_backbone = get_segformer_backbone()
 
 
