@@ -20,8 +20,8 @@ import random
 torch.backends.cudnn.enabled = True
 torch.backends.cudnn.benchmark = True
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '7'
-DOWNSAMPLE_RATIO = 0.9
+os.environ['CUDA_VISIBLE_DEVICES'] = '5'
+DOWNSAMPLE_RATIO = 1.0
 
 parser = argparse.ArgumentParser(description='RGBD Sementic Segmentation')
 parser.add_argument('--data-dir', default="/mnt/syh/datasets/NYUv2/data/", metavar='DIR',

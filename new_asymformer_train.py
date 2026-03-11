@@ -24,8 +24,8 @@ torch.backends.cudnn.benchmark = True
 
 IGNORE_INDEX = -1  
 DECODER_LOSS = True
-os.environ['CUDA_VISIBLE_DEVICES'] = '5'
-DOWNSAMPLE_RATIO = 1.0
+os.environ['CUDA_VISIBLE_DEVICES'] = '4'
+DOWNSAMPLE_RATIO = 0.5
 MEMORY_PATH = "/mnt/syh"
 MODEL_CONFIG = dict(name="new_former", 
                     rgb_branch="S", 
@@ -36,7 +36,7 @@ MODEL_CONFIG = dict(name="new_former",
                     with_4=False,
                     with_8=False,
                     with_16=False,
-                    with_32=True)
+                    with_32=False)
 print("===================Train Config===================")
 for k, v in MODEL_CONFIG.items():
     print(f"{k}: {v}")
@@ -56,7 +56,7 @@ if MODEL_CONFIG['with_16']:
 if MODEL_CONFIG['with_32']:
     detail_str += '_32'
 
-detail_str += "_only_dice"
+# detail_str += "_only_dice"
 
 
 dataset_path = os.path.join(MEMORY_PATH, "datasets", "NYUv2", "data")
