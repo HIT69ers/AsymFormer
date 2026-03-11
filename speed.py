@@ -9,8 +9,12 @@ from thop import profile
 
 from src.new_asymformer import New_Asymformer_v3
 
+from src.AsymFormer import B0_T
 
-DOWNSAMPLE_RATIO = 0.8
+import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+
+DOWNSAMPLE_RATIO = 0.6
 MODEL_CONFIG = dict(name="new_former", 
                     rgb_branch="S", 
                     rgb_pretrained=None,
@@ -37,6 +41,8 @@ if __name__ == '__main__':
                             d_pretrained=MODEL_CONFIG['d_pretrained'],
                             downsample_ratio=DOWNSAMPLE_RATIO,
                             num_classes=40)
+    
+    # model = B0_T(num_classes=40)
     model.eval()
     model.to(device)
     iterations = None
