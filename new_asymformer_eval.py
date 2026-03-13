@@ -15,10 +15,10 @@ from utils import utils
 from utils.utils import load_ckpt, intersectionAndUnion, AverageMeter, accuracy, macc
 
 
-EPOCH = 375
+EPOCH = 250
 DECODER_LOSS = True
 os.environ['CUDA_VISIBLE_DEVICES'] = '7'
-DOWNSAMPLE_RATIO = 1.0
+DOWNSAMPLE_RATIO = 0.5
 MEMORY_PATH = "/mnt/syh"
 MODEL_CONFIG = dict(name="new_former", 
                     rgb_branch="S", 
@@ -29,7 +29,7 @@ MODEL_CONFIG = dict(name="new_former",
                     with_4=False,
                     with_8=False,
                     with_16=False,
-                    with_32=True)
+                    with_32=False)
 print("===================Train Config===================")
 for k, v in MODEL_CONFIG.items():
     print(f"{k}: {v}")
@@ -39,7 +39,7 @@ print("==================================================")
 dataset_path = os.path.join(MEMORY_PATH, "datasets", "NYUv2", "data")
 # ckpt_dir = os.path.join(MEMORY_PATH, "asym_checkpoints", MODEL_CONFIG['name'] + "_" + MODEL_CONFIG['rgb_branch'] + "_" + MODEL_CONFIG['d_branch'] + '_' +\
 #                         str(DOWNSAMPLE_RATIO))
-ckpt_dir = "/mnt/syh/asym_checkpoints/new_former_S_b0_1.0_v3_2026-02-05_14:39:06_dloss_32_only_dice/"
+ckpt_dir = "/mnt/syh/asym_checkpoints/new_former_S_b0_0.5_v3_2026-03-11_19:56:45_dloss/"
 pth_dir = os.path.join(ckpt_dir, f"ckpt_epoch_{EPOCH}.00.pth")
 
 ######################################

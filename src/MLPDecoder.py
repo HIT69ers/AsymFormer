@@ -174,13 +174,13 @@ class DecoderHead_loss(nn.Module):
                 out32 = self.out32_head(_c4)
                 return x, out8, out16, out32
             if self.with_4 and self.with_8 and self.with_16 and self.with_32:
-                out4 = self.out4_head(_c)
+                out4 = self.out4_head(_c1)
                 out8 = self.out8_head(_c2)
                 out16 = self.out16_head(_c3)
                 out32 = self.out32_head(_c4)
                 return x, out4, out8, out16, out32
             if self.with_4 and (not self.with_8) and (not self.with_16) and (not self.with_32):
-                out4 = self.out4_head(_c)
+                out4 = self.out4_head(_c1)
                 return x, out4
         else:
             return x

@@ -17,8 +17,8 @@ from utils import utils
 from utils.utils import load_ckpt, intersectionAndUnion, AverageMeter, accuracy, macc
 
 
-EPOCH = 500
-DOWNSAMPLE_RATIO = 0.6
+EPOCH = 250
+DOWNSAMPLE_RATIO = 0.8
 pth_dir = f"/mnt/syh/asym_checkpoints/Biformer_b3_b0_{DOWNSAMPLE_RATIO}_M1_bsize8/ckpt_epoch_{EPOCH}.00.pth"
 model = biformer(num_classes=40, downsample_ratio=DOWNSAMPLE_RATIO)
 print(f"==============================")
