@@ -192,7 +192,7 @@ def inference():
 
     val_data = Data.RGBD_Dataset(transform=torchvision.transforms.Compose([Data.scaleNorm(),
                                                                            Data.ToTensor(),
-                                                                           Normalize()]),
+                                                                           Data.Normalize()]),
                                  phase_train=False,
                                  data_dir=args.data_dir,
                                  txt_name='test.txt'
