@@ -40,7 +40,7 @@ dataset_path = os.path.join(MEMORY_PATH, "datasets", "NYUv2", "data")
 # ckpt_dir = os.path.join(MEMORY_PATH, "asym_checkpoints", MODEL_CONFIG['name'] + "_" + MODEL_CONFIG['rgb_branch'] + "_" + MODEL_CONFIG['d_branch'] + '_' +\
 #                         str(DOWNSAMPLE_RATIO))
 ckpt_dir = "/mnt/syh/asym_checkpoints/new_former_S_b0_0.5_v3_2026-03-11_19:56:45_dloss/"
-pth_dir = os.path.join(ckpt_dir, f"ckpt_epoch_{EPOCH}.00.pth")
+pth_dir = "/mnt/syh/asym_checkpoints/new_former_S_b0_0.5_v3_2026-03-16_16:59:23_dloss_32/epoch-10_miou-31.77.pth"
 
 ######################################
 # Network
@@ -217,8 +217,9 @@ def inference():
             _ = model(dummy_rgb, dummy_depth)
 
         for batch_idx, sample in enumerate(val_loader):
-            origin_image = sample['origin_image'].numpy()
-            origin_depth = sample['origin_depth'].numpy()
+            if args.visualize:
+                origin_image = sample['origin_image'].numpy()
+                origin_depth = sample['origin_depth'].numpy()
             image = sample['image'].to(device)
             depth = sample['depth'].to(device)
             label = sample['label'].numpy()

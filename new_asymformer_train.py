@@ -25,10 +25,10 @@ torch.backends.cudnn.benchmark = True
 
 IGNORE_INDEX = -1  
 DECODER_LOSS = True
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ['CUDA_VISIBLE_DEVICES'] = '3'
 DOWNSAMPLE_RATIO = 0.5
 MEMORY_PATH = "/mnt/syh"
-BCE_LOSS_RATE = 0.1
+BCE_LOSS_RATE = 0.3
 MODEL_CONFIG = dict(name="new_former", 
                     rgb_branch="S", 
                     rgb_pretrained=os.path.join(MEMORY_PATH, "pretrained", "convnext", "convnext_small_1k_224_ema.pth"),
@@ -38,7 +38,7 @@ MODEL_CONFIG = dict(name="new_former",
                     with_4=False,
                     with_8=False,
                     with_16=False,
-                    with_32=True,
+                    with_32=False,
                     bce_loss_rate=BCE_LOSS_RATE)
 
 
@@ -82,8 +82,8 @@ stream_handler.setFormatter(formatter)
 
 logger.addHandler(file_handler)
 logger.addHandler(stream_handler)
-
-logger.info(f"setting bce loss rate as {BCE_LOSS_RATE}")
+if (MODEL_CONFIG['with_4'] or MODEL_CONFIG['with_8'] or MODEL_CONFIG['with_16'] or MODEL_CONFIG['with_32']):
+    logger.info(f"setting bce loss rate as {BCE_LOSS_RATE}")
 logger.info("===================Train Config===================")
 for k, v in MODEL_CONFIG.items():
     logger.info(f"{k}: {v}")
@@ -308,9 +308,9 @@ def train():
         local_count = 0
         last_count = 0
         end_time = time.time()
-        if epoch % args.save_epoch_freq == 0 and epoch != args.start_epoch:
-            save_ckpt(args.ckpt_dir, model, optimizer, global_step, epoch,
-                      local_count, num_train)
+        # if epoch % args.save_epoch_freq == 0 and epoch != args.start_epoch:
+        #     save_ckpt(args.ckpt_dir, model, optimizer, global_step, epoch,
+        #               local_count, num_train)
 
         for batch_idx, sample in enumerate(train_loader):
 
