@@ -16,7 +16,7 @@ from utils.utils import load_ckpt, AverageMeter
 from utils.utils import print_log_logger
 import random
 import datetime
-import logging
+from utils.logger import my_get_logger
 
 from src.loss.detail_loss import DetailAggregateLoss
 
@@ -28,7 +28,10 @@ DECODER_LOSS = True
 os.environ['CUDA_VISIBLE_DEVICES'] = '3'
 DOWNSAMPLE_RATIO = 0.5
 MEMORY_PATH = "/mnt/syh"
+USE_BCE_LOSS = False
 BCE_LOSS_RATE = 0.3
+USE_DICE_LOSS = True
+DICE_LOSS_RATE = 0.4
 MODEL_CONFIG = dict(name="new_former", 
                     rgb_branch="S", 
                     rgb_pretrained=os.path.join(MEMORY_PATH, "pretrained", "convnext", "convnext_small_1k_224_ema.pth"),
@@ -38,8 +41,11 @@ MODEL_CONFIG = dict(name="new_former",
                     with_4=False,
                     with_8=False,
                     with_16=False,
-                    with_32=False,
-                    bce_loss_rate=BCE_LOSS_RATE)
+                    with_32=True,
+                    use_bce_loss=USE_BCE_LOSS,
+                    bce_loss_rate=BCE_LOSS_RATE,
+                    use_dice_loss=USE_DICE_LOSS,
+                    dice_loss_rate=DICE_LOSS_RATE)
 
 
 detail_str = ""
@@ -54,8 +60,11 @@ if MODEL_CONFIG['with_16']:
 if MODEL_CONFIG['with_32']:
     detail_str += '_32'
 
-# detail_str += "_only_dice"
-
+if (MODEL_CONFIG['with_4'] or MODEL_CONFIG['with_8'] or MODEL_CONFIG['with_16'] or MODEL_CONFIG['with_32']):
+    if USE_BCE_LOSS and (not USE_DICE_LOSS):
+        detail_str += '_only_bce'
+    elif (not USE_BCE_LOSS) and USE_DICE_LOSS:
+        detail_str += '_only_dice_loss'
 
 dataset_path = os.path.join(MEMORY_PATH, "datasets", "NYUv2", "data")
 ckpt_dir = os.path.join(MEMORY_PATH, "asym_checkpoints", MODEL_CONFIG['name'] + "_" + MODEL_CONFIG['rgb_branch'] + "_" + MODEL_CONFIG['d_branch'] + '_' +\
@@ -67,21 +76,8 @@ ckpt_dir = os.path.join(MEMORY_PATH, "asym_checkpoints", MODEL_CONFIG['name'] + 
 if not os.path.exists(ckpt_dir):
     os.mkdir(ckpt_dir)
 
-logger = logging.getLogger('train')
-logger.setLevel(level=logging.INFO)
+logger = my_get_logger(log_dir=ckpt_dir)
 
-formatter = logging.Formatter('%(asctime)s - %(filename)s[line:%(lineno)d] - %(levelname)s: %(message)s')
-
-file_handler = logging.FileHandler(os.path.join(ckpt_dir, 'train.log'))
-file_handler.setLevel(level=logging.INFO)
-file_handler.setFormatter(formatter)
-
-stream_handler = logging.StreamHandler()
-stream_handler.setLevel(logging.INFO)
-stream_handler.setFormatter(formatter)
-
-logger.addHandler(file_handler)
-logger.addHandler(stream_handler)
 if (MODEL_CONFIG['with_4'] or MODEL_CONFIG['with_8'] or MODEL_CONFIG['with_16'] or MODEL_CONFIG['with_32']):
     logger.info(f"setting bce loss rate as {BCE_LOSS_RATE}")
 logger.info("===================Train Config===================")
@@ -148,7 +144,6 @@ class Engine(object):
                 pass
             self.checkpoint_state.pop()
         save_ckpt_new(ckpt_dir, model, optimizer, global_step, epoch, 0, 1, miou)
-        
 
 
 def setup_seed(seed):
@@ -360,12 +355,10 @@ def train():
                 boundery_bce_loss += boundery_bce_loss32
                 boundery_dice_loss += boundery_dice_loss32
 
-            # bce + dice
-            # loss += boundery_bce_loss + boundery_dice_loss
-            # only bce
-            loss += MODEL_CONFIG['bce_loss_rate'] * boundery_bce_loss
-            # only dice
-            # loss += boundery_dice_loss
+            if MODEL_CONFIG['use_bce_loss']:
+                loss += MODEL_CONFIG['bce_loss_rate'] * boundery_bce_loss
+            if MODEL_CONFIG['use_dice_loss']:
+                loss += MODEL_CONFIG['dice_loss_rate'] * boundery_dice_loss
 
             # iteration
             loss.backward()
@@ -395,8 +388,8 @@ def train():
             
             logger.info(f"Epoch {real_epoch} validation result: mIoU {miou}, best mIoU {best_miou}")
 
-    save_ckpt(args.ckpt_dir, model, optimizer, global_step, args.epochs,
-              0, num_train)
+    # save_ckpt(args.ckpt_dir, model, optimizer, global_step, args.epochs,
+    #           0, num_train)
 
     print("Training completed ")
 

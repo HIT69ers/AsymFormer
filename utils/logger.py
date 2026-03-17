@@ -121,3 +121,25 @@ def get_logger(log_dir=None, log_file=None, rank=0):
 
         logger.addHandler(stream_handler)
     return logger
+
+
+def my_get_logger(log_dir=None, log_file='train.log'):
+    logger = logging.getLogger('train')
+    logger.setLevel(level=logging.INFO)
+    del logger.handlers[:]
+    logger.propagate = False
+
+    formatter = logging.Formatter('%(asctime)s - %(filename)s[line:%(lineno)d] - %(levelname)s: %(message)s')
+
+    if log_dir:
+        file_handler = logging.FileHandler(os.path.join(log_dir, log_file))
+        file_handler.setLevel(level=logging.INFO)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+
+    stream_handler = logging.StreamHandler()
+    stream_handler.setLevel(logging.INFO)
+    stream_handler.setFormatter(formatter)
+    
+    logger.addHandler(stream_handler)
+    return logger
