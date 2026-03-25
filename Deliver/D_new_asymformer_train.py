@@ -210,18 +210,18 @@ def val(model, dataloader, engine):
 
             # 原代码使用了 +1，这里保留以保持与原评估脚本一致。
             # 如果你的标签是 0..C-1，请移除下面这一行或调整为与标签一致。
-            output = output + 1
+            # output = output + 1
 
             # 处理 batch 维度：若为批量（3D），逐样本计算 intersection/union
             if output.ndim == 3:
                 for i in range(output.shape[0]):
                     out_i = output[i]
                     lab_i = label[i]
-                    intersection, union = intersectionAndUnion(out_i, lab_i, numClass=40)
+                    intersection, union = intersectionAndUnion(out_i, lab_i, numClass=25)
                     intersection_meter.update(intersection)
                     union_meter.update(union)
             else:
-                intersection, union = intersectionAndUnion(output, label, numClass=40)
+                intersection, union = intersectionAndUnion(output, label, numClass=25)
                 intersection_meter.update(intersection)
                 union_meter.update(union)
     
