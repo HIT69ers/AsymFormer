@@ -9,11 +9,15 @@ from torch.utils.data import DataLoader
 import torch.optim
 import torchvision.transforms as transforms
 from torch import nn
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.data import DistributedSampler, RandomSampler
 from src.new_asymformer import New_Asymformer, New_Asymformer_v2, New_Asymformer_v3, New_Asymformer_v3_loss, New_Asymformer_v3_dloss
-import NYUv2_dataloader as Data
+from Deliver.deliver import DELIVER
+from Deliver.augmentation_mm import get_train_augmentation, get_val_augmentation
 from utils.utils import save_ckpt, save_ckpt_new, intersectionAndUnion
 from utils.utils import load_ckpt, AverageMeter
-from utils.utils import print_log_logger
+from utils.utils import print_log_logger, print_log_logger_dis
 import random
 import datetime
 from utils.logger import my_get_logger
@@ -23,12 +27,12 @@ from src.loss.detail_loss import DetailAggregateLoss
 torch.backends.cudnn.enabled = True
 torch.backends.cudnn.benchmark = True
 
-IGNORE_INDEX = -1  
+IGNORE_INDEX = 255  
 DECODER_LOSS = True
-os.environ['CUDA_VISIBLE_DEVICES'] = '3'
+# os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 DOWNSAMPLE_RATIO = 0.5
 MEMORY_PATH = "/mnt/syh"
-USE_BCE_LOSS = True
+USE_BCE_LOSS = False
 BCE_LOSS_RATE = 0.1
 USE_DICE_LOSS = False
 DICE_LOSS_RATE = 1.0
@@ -38,7 +42,7 @@ MODEL_CONFIG = dict(name="new_former",
                     d_branch="b0",
                     d_pretrained=None,
                     version='v3',
-                    with_4=True,
+                    with_4=False,
                     with_8=False,
                     with_16=False,
                     with_32=False,
@@ -66,26 +70,18 @@ if (MODEL_CONFIG['with_4'] or MODEL_CONFIG['with_8'] or MODEL_CONFIG['with_16'] 
     elif (not USE_BCE_LOSS) and USE_DICE_LOSS:
         detail_str += '_only_dice_loss'
 
-dataset_path = os.path.join(MEMORY_PATH, "datasets", "NYUv2", "data")
-ckpt_dir = os.path.join(MEMORY_PATH, "asym_checkpoints", MODEL_CONFIG['name'] + "_" + MODEL_CONFIG['rgb_branch'] + "_" + MODEL_CONFIG['d_branch'] + '_' +\
+dataset_name = "DELIVER"
+dataset_path = os.path.join(MEMORY_PATH, "datasets", dataset_name)
+ckpt_dir = os.path.join(MEMORY_PATH, "asym_checkpoints", dataset_name + '_' + MODEL_CONFIG['name'] + "_" + MODEL_CONFIG['rgb_branch'] + "_" + MODEL_CONFIG['d_branch'] + '_' +\
                         str(DOWNSAMPLE_RATIO) + "_" + MODEL_CONFIG['version'] + "_" + datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S") + detail_str)
 
 # print(f"use detail loss in the end")
 # ckpt_dir += "_end"
 
 if not os.path.exists(ckpt_dir):
-    os.mkdir(ckpt_dir)
+    os.makedirs(ckpt_dir, exist_ok=True)
 
 logger = my_get_logger(log_dir=ckpt_dir)
-
-if (MODEL_CONFIG['with_4'] or MODEL_CONFIG['with_8'] or MODEL_CONFIG['with_16'] or MODEL_CONFIG['with_32']):
-    logger.info(f"setting bce loss rate as {BCE_LOSS_RATE}")
-logger.info("===================Train Config===================")
-for k, v in MODEL_CONFIG.items():
-    logger.info(f"{k}: {v}")
-logger.info(f"Downsample_ratio: {DOWNSAMPLE_RATIO}")
-logger.info(f"Ignore_index: {IGNORE_INDEX}")
-logger.info("==================================================")
 
 parser = argparse.ArgumentParser(description='RGBD Sementic Segmentation')
 parser.add_argument('--data-dir', default=dataset_path, metavar='DIR',
@@ -94,13 +90,13 @@ parser.add_argument('--cuda', action='store_true', default=True,
                     help='enables CUDA training')
 parser.add_argument('-j', '--workers', default=8, type=int, metavar='N',
                     help='number of data loading workers (default: 8)')
-parser.add_argument('--epochs', default=500, type=int, metavar='N',
+parser.add_argument('--epochs', default=200, type=int, metavar='N',
                     help='number of total epochs to run (default: 1500)')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
 parser.add_argument('-b', '--batch-size', default=8, type=int,
                     metavar='N', help='mini-batch size (default: 10)')
-parser.add_argument('--lr', '--learning-rate', default=5e-5, type=float,
+parser.add_argument('--lr', '--learning-rate', default=6e-5, type=float,
                     metavar='LR', help='initial learning rate')
 parser.add_argument('--weight-decay', '--wd', default=0.01, type=float,
                     metavar='W', help='weight decay (default: 1e-4)')
@@ -114,22 +110,38 @@ parser.add_argument('--ckpt-dir', default=ckpt_dir, metavar='DIR',
                     help='path to save checkpoints')
 parser.add_argument('--checkpoint', action='store_true', default=False,
                     help='Using Pytorch checkpoint or not')
+parser.add_argument('--amp', action='store_true', default=False,
+                    help="autocast train")
 
 
 args = parser.parse_args()
-device = torch.device("cuda:0" if args.cuda and torch.cuda.is_available() else "cpu")
+device = torch.device("cuda" if args.cuda and torch.cuda.is_available() else "cpu")
 image_w = 640
 image_h = 480
 
 
 def is_eval(epoch):
-    return epoch > 250 or epoch == 1 or epoch % 10 == 0
+    return epoch > 100 or epoch == 1 or epoch % 10 == 0
 
 
 class Engine(object):
     def __init__(self, logger):
         self.checkpoint_state = []
         self.logger = logger
+
+        ############# Distributed Training Config
+        if "WORLD_SIZE" in os.environ:
+            self.distributed = int(os.environ["WORLD_SIZE"]) > 1
+
+        if self.distributed:
+            self.local_rank = int(os.environ["LOCAL_RANK"])
+            self.world_size = int(os.environ["WORLD_SIZE"])
+            torch.cuda.set_device(self.local_rank)
+            torch.distributed.init_process_group(backend="nccl")
+            self.devices = [0, 1]
+        else:
+            self.local_rank = int(os.environ["LOCAL_RANK"])
+            self.devices = [0, 1]  # parse_devices(self.args.devices)
 
     def save_and_remove(self, epoch, miou, ckpt_dir, model, optimizer, global_step):
         self.checkpoint_state.append(dict(epoch=epoch, miou=miou))
@@ -180,17 +192,18 @@ def create_lr_scheduler(optimizer,
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=f)
 
 
-def val(model, dataloader, device):
+def val(model, dataloader, engine):
     model.eval()
     intersection_meter = AverageMeter()
     union_meter = AverageMeter()
     with torch.no_grad():
-        for batch_idx, sample in enumerate(dataloader):
-            if ((batch_idx + 1) % int(len(dataloader) * 0.5) == 0 or batch_idx == 0):
-                print(f"Validation Iter: {batch_idx + 1} / {len(dataloader)}")
-            image = sample['image'].to(device)
-            depth = sample['depth'].to(device)
-            label = sample['label'].numpy()  # shape: (B, H, W) or (H, W)
+        for batch_idx, (sample, label) in enumerate(dataloader):
+            if (engine.distributed and (engine.local_rank == 0)) or (not engine.distributed):
+                if ((batch_idx + 1) % int(len(dataloader) * 0.5) == 0 or batch_idx == 0):
+                    print(f"Validation Iter: {batch_idx + 1} / {len(dataloader)}")
+            image = sample['img'].cuda()
+            depth = sample['depth'].cuda()
+            label = label.numpy()  # shape: (B, H, W) or (H, W)
 
             pred = model(image, depth)
             output = torch.max(pred, 1)[1].cpu().numpy()  # shape: (B, H, W) or (H, W)
@@ -217,6 +230,14 @@ def val(model, dataloader, device):
     return round(miou*100, 2)
 
 
+def all_reduce_tensor(tensor, op=dist.ReduceOp.SUM, world_size=1):
+    tensor = tensor.clone()
+    dist.all_reduce(tensor, op)
+    tensor.div_(world_size)
+
+    return tensor
+
+
 def train():
 
     engine = Engine(logger=logger)
@@ -224,29 +245,40 @@ def train():
 
     seed = 2333
     setup_seed(seed)
-    logger.info(f"set seed {seed}")
-    train_data = Data.RGBD_Dataset(transform=transforms.Compose([Data.scaleNorm(),
-                                                                 Data.RandomScale((1.0, 1.4, 2.0)),
-                                                                 Data.RandomHSV((0.9, 1.1),
-                                                                                (0.9, 1.1),
-                                                                                (25, 25)),
-                                                                 Data.RandomCrop(image_h, image_w),
-                                                                 Data.RandomFlip(),
-                                                                 Data.ToTensor(),
-                                                                 Data.Normalize()]),
-                                   phase_train=True,
-                                   data_dir=args.data_dir)
-    train_loader = DataLoader(train_data, batch_size=args.batch_size, shuffle=True,
-                              num_workers=args.workers, pin_memory=False)
+    if (engine.distributed and engine.local_rank == 0) or (not engine.distributed):
+        if (MODEL_CONFIG['with_4'] or MODEL_CONFIG['with_8'] or MODEL_CONFIG['with_16'] or MODEL_CONFIG['with_32']):
+            logger.info(f"setting bce loss rate as {BCE_LOSS_RATE}")
+        logger.info("===================Train Config===================")
+        for k, v in MODEL_CONFIG.items():
+            logger.info(f"{k}: {v}")
+        logger.info(f"Downsample_ratio: {DOWNSAMPLE_RATIO}")
+        logger.info(f"Ignore_index: {IGNORE_INDEX}")
+        logger.info("==================================================")
+        logger.info(f"set seed {seed}")
 
-    val_data = Data.RGBD_Dataset(transform=transforms.Compose([Data.scaleNorm(),
-                                                               Data.ToTensor(),
-                                                               Data.Normalize()]),
-                                 phase_train=False,
-                                 data_dir=args.data_dir,
-                                 txt_name='test.txt'
-                                 )
-    val_loader = DataLoader(val_data, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, pin_memory=True)
+    ######### Dataset Config #########
+    cases = None
+
+    train_transform = get_train_augmentation(size=(1024, 1024), seg_fill=255)
+    train_data = DELIVER(root=args.data_dir, split='train', transform=train_transform, modals=['img', 'depth'], case=cases)
+
+    val_transform = get_val_augmentation(size=(1024, 1024))
+    val_data = DELIVER(root=args.data_dir, split='val', transform=val_transform, modals=['img', 'depth'], case=cases)
+
+    if engine.distributed: 
+        train_sampler = DistributedSampler(train_data)
+        batch_size = args.batch_size // engine.world_size
+        train_is_shuffle = False
+        val_sampler = DistributedSampler(val_data)
+    else:
+        train_sampler = None
+        batch_size = args.batch_size
+        train_is_shuffle = True
+        val_sampler = None
+
+    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=train_is_shuffle,
+                              num_workers=args.workers, pin_memory=False, drop_last=False, sampler=train_sampler)
+    val_loader = DataLoader(val_data, batch_size=batch_size, shuffle=False, num_workers=args.workers, pin_memory=True, sampler=val_sampler)
 
     num_train = len(train_data)
 
@@ -272,22 +304,27 @@ def train():
                     d_branch=MODEL_CONFIG['d_branch'],
                     d_pretrained=MODEL_CONFIG['d_pretrained'],
                     downsample_ratio=DOWNSAMPLE_RATIO,
-                    num_classes=40,
+                    num_classes=25,
                     with_4=MODEL_CONFIG['with_4'],
                     with_8=MODEL_CONFIG['with_8'],
                     with_16=MODEL_CONFIG['with_16'],
                     with_32=MODEL_CONFIG['with_32'])
-    #####################################
 
     ##################################### 
     # Loss
     CEL_weighted = nn.CrossEntropyLoss(reduction='mean', ignore_index=IGNORE_INDEX)
     detail_loss = DetailAggregateLoss()
     #####################################
-
     model.train()
-    model.to(device)
-    CEL_weighted.to(device)
+
+    if engine.distributed:
+        model.cuda()
+        model = DDP(model, device_ids=[engine.local_rank], output_device=engine.local_rank, find_unused_parameters=False)
+    else:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model.to(device)
+
+    CEL_weighted.cuda()
 
     optimizer = torch.optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr,
                                   weight_decay=args.weight_decay)
@@ -298,8 +335,13 @@ def train():
 
     lr_scheduler = create_lr_scheduler(optimizer, len(train_loader), args.epochs, warmup=True)
 
+    if args.amp:
+        scaler = torch.cuda.amp.GradScaler()
+
     for epoch in range(int(args.start_epoch), args.epochs):
         model.train()
+        if engine.distributed:
+            train_sampler.set_epoch(epoch)
         local_count = 0
         last_count = 0
         end_time = time.time()
@@ -307,73 +349,94 @@ def train():
         #     save_ckpt(args.ckpt_dir, model, optimizer, global_step, epoch,
         #               local_count, num_train)
 
-        for batch_idx, sample in enumerate(train_loader):
+        for batch_idx, (sample, label) in enumerate(train_loader):
 
-            image = sample['image'].to(device)
-            depth = sample['depth'].to(device)
-            target_scales = [sample[s].to(device) for s in ['label']]
+            image = sample['img'].cuda()
+            depth = sample['depth'].cuda()
+            target_scales = label.cuda()
 
             optimizer.zero_grad()
 
-            # Inference
-            if (not MODEL_CONFIG['with_4']) and (not MODEL_CONFIG['with_8']) and (not MODEL_CONFIG['with_16']) and (not MODEL_CONFIG['with_32']):
-                out = model(image, depth)
-            if (not MODEL_CONFIG['with_4']) and (not MODEL_CONFIG['with_8']) and (not MODEL_CONFIG['with_16']) and MODEL_CONFIG['with_32']:
-                out, out32 = model(image, depth)
-            if (not MODEL_CONFIG['with_4']) and (not MODEL_CONFIG['with_8']) and MODEL_CONFIG['with_16'] and MODEL_CONFIG['with_32']:
-                out, out16, out32 = model(image, depth)
-            if (not MODEL_CONFIG['with_4']) and MODEL_CONFIG['with_8'] and MODEL_CONFIG['with_16'] and MODEL_CONFIG['with_32']:
-                out, out8, out16, out32 = model(image, depth)
-            if MODEL_CONFIG['with_4'] and MODEL_CONFIG['with_8'] and MODEL_CONFIG['with_16'] and MODEL_CONFIG['with_32']:
-                out, out4, out8, out16, out32 = model(image, depth)
-            if MODEL_CONFIG['with_4'] and (not MODEL_CONFIG['with_8']) and (not MODEL_CONFIG['with_16']) and (not MODEL_CONFIG['with_32']):
-                out, out4 = model(image, depth)
+            with torch.autocast(enabled=args.amp, device_type='cuda', dtype=torch.float16):
+                # Inference
+                if (not MODEL_CONFIG['with_4']) and (not MODEL_CONFIG['with_8']) and (not MODEL_CONFIG['with_16']) and (not MODEL_CONFIG['with_32']):
+                    out = model(image, depth)
+                if (not MODEL_CONFIG['with_4']) and (not MODEL_CONFIG['with_8']) and (not MODEL_CONFIG['with_16']) and MODEL_CONFIG['with_32']:
+                    out, out32 = model(image, depth)
+                if (not MODEL_CONFIG['with_4']) and (not MODEL_CONFIG['with_8']) and MODEL_CONFIG['with_16'] and MODEL_CONFIG['with_32']:
+                    out, out16, out32 = model(image, depth)
+                if (not MODEL_CONFIG['with_4']) and MODEL_CONFIG['with_8'] and MODEL_CONFIG['with_16'] and MODEL_CONFIG['with_32']:
+                    out, out8, out16, out32 = model(image, depth)
+                if MODEL_CONFIG['with_4'] and MODEL_CONFIG['with_8'] and MODEL_CONFIG['with_16'] and MODEL_CONFIG['with_32']:
+                    out, out4, out8, out16, out32 = model(image, depth)
+                if MODEL_CONFIG['with_4'] and (not MODEL_CONFIG['with_8']) and (not MODEL_CONFIG['with_16']) and (not MODEL_CONFIG['with_32']):
+                    out, out4 = model(image, depth)
             
-            # calculate loss
-            loss = CEL_weighted(out, (target_scales[0] - 1).long())
+                # calculate loss
+                loss = CEL_weighted(out, target_scales)
 
-            boundery_bce_loss = 0.
-            boundery_dice_loss = 0.
+                boundery_bce_loss = 0.
+                boundery_dice_loss = 0.
 
-            # if 'end' in ckpt_dir:
-            #     boundery_bce_loss, boundery_dice_loss = detail_loss(out, target_scales[0].long())
+                # if 'end' in ckpt_dir:
+                #     boundery_bce_loss, boundery_dice_loss = detail_loss(out, target_scales[0].long())
 
-            if MODEL_CONFIG['with_4']:
-                boundery_bce_loss4, boundery_dice_loss4 = detail_loss(out4, target_scales[0])
-                boundery_bce_loss += boundery_bce_loss4
-                boundery_dice_loss += boundery_dice_loss4
-            if MODEL_CONFIG['with_8']:
-                boundery_bce_loss8, boundery_dice_loss8 = detail_loss(out8, target_scales[0])
-                boundery_bce_loss += boundery_bce_loss8
-                boundery_dice_loss += boundery_dice_loss8
-            if MODEL_CONFIG['with_16']:
-                boundery_bce_loss16, boundery_dice_loss16 = detail_loss(out16, target_scales[0])
-                boundery_bce_loss += boundery_bce_loss16
-                boundery_dice_loss += boundery_dice_loss16
-            if MODEL_CONFIG['with_32']:
-                boundery_bce_loss32, boundery_dice_loss32 = detail_loss(out32, target_scales[0])
-                boundery_bce_loss += boundery_bce_loss32
-                boundery_dice_loss += boundery_dice_loss32
+                if MODEL_CONFIG['with_4']:
+                    boundery_bce_loss4, boundery_dice_loss4 = detail_loss(out4, target_scales[0])
+                    boundery_bce_loss += boundery_bce_loss4
+                    boundery_dice_loss += boundery_dice_loss4
+                if MODEL_CONFIG['with_8']:
+                    boundery_bce_loss8, boundery_dice_loss8 = detail_loss(out8, target_scales[0])
+                    boundery_bce_loss += boundery_bce_loss8
+                    boundery_dice_loss += boundery_dice_loss8
+                if MODEL_CONFIG['with_16']:
+                    boundery_bce_loss16, boundery_dice_loss16 = detail_loss(out16, target_scales[0])
+                    boundery_bce_loss += boundery_bce_loss16
+                    boundery_dice_loss += boundery_dice_loss16
+                if MODEL_CONFIG['with_32']:
+                    boundery_bce_loss32, boundery_dice_loss32 = detail_loss(out32, target_scales[0])
+                    boundery_bce_loss += boundery_bce_loss32
+                    boundery_dice_loss += boundery_dice_loss32
 
-            if MODEL_CONFIG['use_bce_loss']:
-                loss += MODEL_CONFIG['bce_loss_rate'] * boundery_bce_loss
-            if MODEL_CONFIG['use_dice_loss']:
-                loss += MODEL_CONFIG['dice_loss_rate'] * boundery_dice_loss
+                if MODEL_CONFIG['use_bce_loss']:
+                    loss += MODEL_CONFIG['bce_loss_rate'] * boundery_bce_loss
+                if MODEL_CONFIG['use_dice_loss']:
+                    loss += MODEL_CONFIG['dice_loss_rate'] * boundery_dice_loss
 
-            # iteration
-            loss.backward()
-            optimizer.step()
-            lr_scheduler.step()
+            # reduce the whole loss over multi-gpu
+            if engine.distributed:
+                reduce_loss = all_reduce_tensor(loss, world_size=engine.world_size)
 
-            local_count += image.data.shape[0]
+            if args.amp:
+                # Scales loss. Calls ``backward()`` on scaled loss to create scaled gradients.
+                scaler.scale(loss).backward()
+                # otherwise, optimizer.step() is skipped.
+                scaler.step(optimizer)
+                # Updates the scale for next iteration.
+                scaler.update()
+                lr_scheduler.step()
+            else:
+                loss.backward()
+                optimizer.step()
+                lr_scheduler.step()
+
+            if engine.distributed:
+                local_count += image.data.shape[0] * engine.world_size
+            else:
+                local_count += image.data.shape[0]
+
             global_step += 1
             real_epoch = epoch + 1
 
             if global_step % args.print_freq == 0 or global_step == 1:
                 time_inter = time.time() - end_time
                 count_inter = local_count - last_count
-                print_log_logger(logger, global_step, real_epoch, local_count, count_inter,
-                          num_train, loss, time_inter)
+                if (engine.distributed and (engine.local_rank == 0)):
+                    print_log_logger_dis(logger, global_step, real_epoch, local_count, count_inter,
+                            num_train, reduce_loss.item(), time_inter)
+                elif not engine.distributed:
+                    print_log_logger(logger, global_step, real_epoch, local_count, count_inter,
+                            num_train, loss, time_inter)
                 end_time = time.time()
                 last_count = local_count
         
@@ -381,12 +444,17 @@ def train():
             torch.cuda.empty_cache()
             with torch.no_grad():
                 model.eval()
-                miou = val(model, val_loader, device)
-            if miou > best_miou:
-                best_miou = miou
-                engine.save_and_remove(real_epoch, miou, args.ckpt_dir, model, optimizer, global_step)
-            
-            logger.info(f"Epoch {real_epoch} validation result: mIoU {miou}, best mIoU {best_miou}")
+                if args.amp:
+                    with torch.autocast(device_type="cuda", dtype=torch.float16):
+                        miou = val(model, val_loader, engine)
+                else:
+                    miou = val(model, val_loader, engine)
+
+            if (engine.distributed and (engine.local_rank == 0)) or (not engine.distributed):
+                if miou > best_miou:
+                    best_miou = miou
+                    engine.save_and_remove(real_epoch, miou, args.ckpt_dir, model, optimizer, global_step)
+                logger.info(f"Epoch {real_epoch} validation result: mIoU {miou}, best mIoU {best_miou}")
 
     # save_ckpt(args.ckpt_dir, model, optimizer, global_step, args.epochs,
     #           0, num_train)

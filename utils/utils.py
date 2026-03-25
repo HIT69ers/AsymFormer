@@ -162,6 +162,13 @@ def print_log_logger(logger, global_step, epoch, local_count, count_inter, datas
           'Loss: {:.6f} [{:.2f}s every {:>4} data]'.format(
         global_step, epoch, local_count, dataset_size,
         100. * local_count / dataset_size, loss.data, time_inter, count_inter))
+    
+
+def print_log_logger_dis(logger, global_step, epoch, local_count, count_inter, dataset_size, loss, time_inter):
+    logger.info('Step: {:>5} Train Epoch: {:>3} [{:>4}/{:>4} ({:3.1f}%)]    '
+          'Loss: {:.6f} [{:.2f}s every {:>4} data]'.format(
+        global_step, epoch, local_count, dataset_size,
+        100. * local_count / dataset_size, loss, time_inter, count_inter))
 
 
 def save_ckpt(ckpt_dir, model, optimizer, global_step, epoch, local_count, num_train):
