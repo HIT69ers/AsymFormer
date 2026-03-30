@@ -261,10 +261,11 @@ class New_Asymformer_v2(nn.Module):
     
 
 class down_sample_block_v3(nn.Module):
-    def __init__(self, inc_depth, inc_rgb, block_num, rgb_backbone, d_backbone, downsample_ratio=1.0):
+    def __init__(self, inc_depth, inc_rgb, block_num, rgb_backbone, d_backbone, downsample_ratio=1.0, d_three_channels=False):
         super(down_sample_block_v3, self).__init__()
         self.block_num = block_num
         self.downsample_ratio = downsample_ratio
+        self.d_three_channels = d_three_channels
 
         # rgb & d backbone
         stem1 = rgb_backbone.downsample_layers
@@ -273,12 +274,16 @@ class down_sample_block_v3(nn.Module):
         layers2 = d_backbone['blocks']
         norm2 = d_backbone['norms']
 
-        if block_num != 0:
+        if not self.d_three_channels:
+            if block_num != 0:
+                self.depth_stem = stem2[block_num]
+                self.rgb_stem = stem1[block_num]
+            else:
+                self.depth_stem = OverlapPatchEmbed(in_chans=1, embed_dim=inc_depth)
+                self.rgb_stem = stem1[0]
+        else:
             self.depth_stem = stem2[block_num]
             self.rgb_stem = stem1[block_num]
-        else:
-            self.depth_stem = OverlapPatchEmbed(in_chans=1, embed_dim=inc_depth)
-            self.rgb_stem = stem1[0]
 
         self.rgb_layer = layers1[block_num]
         self.depth_layer = layers2[block_num]
@@ -335,36 +340,52 @@ class New_Asymformer_v3(nn.Module):
         else:
             self.d_channels = [64, 128, 320, 512]
 
+        d_three_channels = False
+        for k, v in kwargs.items():
+            if k == 'd_three_channels' and v:
+                print('setting d_three_channels as True')
+                d_three_channels = True
+            if k == 'norm_layer' and v == nn.SyncBatchNorm:
+                print('Using SyncBatchNorm')
+                norm_layer = v
+            elif k == 'norm_layer' and v == nn.BatchNorm2d:
+                print('Using BatchNorm2d')
+                norm_layer = v
+
         self.down_sample_1 = down_sample_block_v3(inc_depth=self.d_channels[0], 
                                                inc_rgb=self.rgb_channels[0], 
                                                block_num=0,
                                                rgb_backbone=rgb_backbone,
                                                d_backbone=d_backbone,
-                                               downsample_ratio=downsample_ratio)
+                                               downsample_ratio=downsample_ratio,
+                                               d_three_channels=d_three_channels)
         
         self.down_sample_2 = down_sample_block_v3(inc_depth=self.d_channels[1], 
                                                inc_rgb=self.rgb_channels[1], 
                                                block_num=1,
                                                rgb_backbone=rgb_backbone,
                                                d_backbone=d_backbone,
-                                               downsample_ratio=downsample_ratio)
+                                               downsample_ratio=downsample_ratio,
+                                               d_three_channels=d_three_channels)
         
         self.down_sample_3 = down_sample_block_v3(inc_depth=self.d_channels[2], 
                                                inc_rgb=self.rgb_channels[2], 
                                                block_num=2,
                                                rgb_backbone=rgb_backbone,
                                                d_backbone=d_backbone,
-                                               downsample_ratio=downsample_ratio)
+                                               downsample_ratio=downsample_ratio,
+                                               d_three_channels=d_three_channels)
         
         self.down_sample_4 = down_sample_block_v3(inc_depth=self.d_channels[3], 
                                                inc_rgb=self.rgb_channels[3], 
                                                block_num=3,
                                                rgb_backbone=rgb_backbone,
                                                d_backbone=d_backbone,
-                                               downsample_ratio=downsample_ratio)
+                                               downsample_ratio=downsample_ratio,
+                                               d_three_channels=d_three_channels)
         
         self.Decoder = DecoderHead(in_channels=self.d_channels, num_classes=num_classes, dropout_ratio=0.1,
-                                   norm_layer=nn.BatchNorm2d,
+                                   norm_layer=norm_layer,
                                    embed_dim=256)
 
     def forward(self, image, depth):

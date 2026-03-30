@@ -7,22 +7,22 @@ import time
 import torch
 from torch.utils.data import DataLoader
 import torch.optim
-import torchvision.transforms as transforms
 from torch import nn
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.utils.data import DistributedSampler, RandomSampler
-from src.new_asymformer import New_Asymformer, New_Asymformer_v2, New_Asymformer_v3, New_Asymformer_v3_loss, New_Asymformer_v3_dloss
-from Deliver.deliver import DELIVER
+from torch.utils.data import DistributedSampler
+from src.new_asymformer import *
+from Deliver.deliver import DELIVER, DELIVER_raw
 from Deliver.augmentation_mm import get_train_augmentation, get_val_augmentation
-from utils.utils import save_ckpt, save_ckpt_new, intersectionAndUnion
-from utils.utils import load_ckpt, AverageMeter
-from utils.utils import print_log_logger, print_log_logger_dis
+from utils.utils import load_ckpt, print_log_logger, print_log_logger_dis
 import random
 import datetime
 from utils.logger import my_get_logger
+from utils.engine import Engine
+from utils.val import val
 
 from src.loss.detail_loss import DetailAggregateLoss
+from src.loss.ohem_celoss import OhemCrossEntropy
 
 torch.backends.cudnn.enabled = True
 torch.backends.cudnn.benchmark = True
@@ -31,6 +31,7 @@ IGNORE_INDEX = 255
 DECODER_LOSS = True
 # os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 DOWNSAMPLE_RATIO = 0.5
+D_THREE_CHANNELS = True
 MEMORY_PATH = "/mnt/syh"
 USE_BCE_LOSS = False
 BCE_LOSS_RATE = 0.1
@@ -49,7 +50,8 @@ MODEL_CONFIG = dict(name="new_former",
                     use_bce_loss=USE_BCE_LOSS,
                     bce_loss_rate=BCE_LOSS_RATE,
                     use_dice_loss=USE_DICE_LOSS,
-                    dice_loss_rate=DICE_LOSS_RATE)
+                    dice_loss_rate=DICE_LOSS_RATE,
+                    d_three_channels=D_THREE_CHANNELS)
 
 
 detail_str = ""
@@ -124,40 +126,6 @@ def is_eval(epoch):
     return epoch > 100 or epoch == 1 or epoch % 10 == 0
 
 
-class Engine(object):
-    def __init__(self, logger):
-        self.checkpoint_state = []
-        self.logger = logger
-
-        ############# Distributed Training Config
-        if "WORLD_SIZE" in os.environ:
-            self.distributed = int(os.environ["WORLD_SIZE"]) > 1
-
-        if self.distributed:
-            self.local_rank = int(os.environ["LOCAL_RANK"])
-            self.world_size = int(os.environ["WORLD_SIZE"])
-            torch.cuda.set_device(self.local_rank)
-            torch.distributed.init_process_group(backend="nccl")
-            self.devices = [0, 1]
-        else:
-            self.local_rank = int(os.environ["LOCAL_RANK"])
-            self.devices = [0, 1]  # parse_devices(self.args.devices)
-
-    def save_and_remove(self, epoch, miou, ckpt_dir, model, optimizer, global_step):
-        self.checkpoint_state.append(dict(epoch=epoch, miou=miou))
-        self.checkpoint_state.sort(key=lambda x: x["miou"], reverse=True)
-        if len(self.checkpoint_state) > 5:
-            try:
-                ckpt_model_filename = f"epoch-{self.checkpoint_state[-1]['epoch']}_miou-{self.checkpoint_state[-1]['miou']}.pth"
-                ckpt_path = os.path.join(ckpt_dir, ckpt_model_filename)
-                os.remove(ckpt_path)
-                self.logger.info(f"remove inferior checkpoint: {self.checkpoint_state[-1]}")
-            except:
-                pass
-            self.checkpoint_state.pop()
-        save_ckpt_new(ckpt_dir, model, optimizer, global_step, epoch, 0, 1, miou)
-
-
 def setup_seed(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
@@ -192,44 +160,6 @@ def create_lr_scheduler(optimizer,
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=f)
 
 
-def val(model, dataloader, engine):
-    model.eval()
-    intersection_meter = AverageMeter()
-    union_meter = AverageMeter()
-    with torch.no_grad():
-        for batch_idx, (sample, label) in enumerate(dataloader):
-            if (engine.distributed and (engine.local_rank == 0)) or (not engine.distributed):
-                if ((batch_idx + 1) % int(len(dataloader) * 0.5) == 0 or batch_idx == 0):
-                    print(f"Validation Iter: {batch_idx + 1} / {len(dataloader)}")
-            image = sample['img'].cuda()
-            depth = sample['depth'].cuda()
-            label = label.numpy()  # shape: (B, H, W) or (H, W)
-
-            pred = model(image, depth)
-            output = torch.max(pred, 1)[1].cpu().numpy()  # shape: (B, H, W) or (H, W)
-
-            # 原代码使用了 +1，这里保留以保持与原评估脚本一致。
-            # 如果你的标签是 0..C-1，请移除下面这一行或调整为与标签一致。
-            # output = output + 1
-
-            # 处理 batch 维度：若为批量（3D），逐样本计算 intersection/union
-            if output.ndim == 3:
-                for i in range(output.shape[0]):
-                    out_i = output[i]
-                    lab_i = label[i]
-                    intersection, union = intersectionAndUnion(out_i, lab_i, numClass=25)
-                    intersection_meter.update(intersection)
-                    union_meter.update(union)
-            else:
-                intersection, union = intersectionAndUnion(output, label, numClass=25)
-                intersection_meter.update(intersection)
-                union_meter.update(union)
-    
-    iou = intersection_meter.sum / (union_meter.sum + 1e-10)
-    miou = iou.mean()
-    return round(miou*100, 2)
-
-
 def all_reduce_tensor(tensor, op=dist.ReduceOp.SUM, world_size=1):
     tensor = tensor.clone()
     dist.all_reduce(tensor, op)
@@ -258,23 +188,29 @@ def train():
 
     ######### Dataset Config #########
     cases = None
+    if MODEL_CONFIG['d_three_channels']:
+        dataset = DELIVER_raw
+    else:
+        dataset = DELIVER
 
     train_transform = get_train_augmentation(size=(1024, 1024), seg_fill=255)
-    train_data = DELIVER(root=args.data_dir, split='train', transform=train_transform, modals=['img', 'depth'], case=cases)
+    train_data = dataset(root=args.data_dir, split='train', transform=train_transform, modals=['img', 'depth'], case=cases)
 
     val_transform = get_val_augmentation(size=(1024, 1024))
-    val_data = DELIVER(root=args.data_dir, split='val', transform=val_transform, modals=['img', 'depth'], case=cases)
+    val_data = dataset(root=args.data_dir, split='val', transform=val_transform, modals=['img', 'depth'], case=cases)
 
     if engine.distributed: 
         train_sampler = DistributedSampler(train_data)
         batch_size = args.batch_size // engine.world_size
         train_is_shuffle = False
         val_sampler = DistributedSampler(val_data)
+        bn = nn.SyncBatchNorm
     else:
         train_sampler = None
         batch_size = args.batch_size
         train_is_shuffle = True
         val_sampler = None
+        bn = nn.BatchNorm2d
 
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=train_is_shuffle,
                               num_workers=args.workers, pin_memory=False, drop_last=False, sampler=train_sampler)
@@ -308,11 +244,15 @@ def train():
                     with_4=MODEL_CONFIG['with_4'],
                     with_8=MODEL_CONFIG['with_8'],
                     with_16=MODEL_CONFIG['with_16'],
-                    with_32=MODEL_CONFIG['with_32'])
+                    with_32=MODEL_CONFIG['with_32'],
+                    d_three_channels=MODEL_CONFIG['d_three_channels'],
+                    norm_layer=bn)
 
     ##################################### 
     # Loss
     CEL_weighted = nn.CrossEntropyLoss(reduction='mean', ignore_index=IGNORE_INDEX)
+    # logger.info(f"Using OhemCELoss")
+    # CEL_weighted = OhemCrossEntropy(ignore_label=IGNORE_INDEX)
     detail_loss = DetailAggregateLoss()
     #####################################
     model.train()
