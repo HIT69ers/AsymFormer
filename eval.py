@@ -16,11 +16,11 @@ from src.AsymFormer import B0_T
 from utils import utils
 from utils.utils import load_ckpt, intersectionAndUnion, AverageMeter, accuracy, macc
 
-pth_dir = './My_model_M1/ckpt_epoch_500.00.pth'
+pth_dir = '/home/syh/WorkSpace/checkpoints/AsymFormer_NYUv2.pth'
 model = B0_T(num_classes=40)
 
 parser = argparse.ArgumentParser(description='RGBD Sementic Segmentation')
-parser.add_argument('--data-dir', default='./data', metavar='DIR',
+parser.add_argument('--data-dir', default='/home/syh/WorkSpace/datasets/data', metavar='DIR',
                     help='path to dataset')
 parser.add_argument('-o', '--output', default='./result/', metavar='DIR',
                     help='path to output')
