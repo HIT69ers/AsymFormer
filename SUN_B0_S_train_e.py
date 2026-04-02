@@ -3,7 +3,6 @@ Our code is partially adapted from RedNet (https://github.com/JinDongJiang/RedNe
 '''
 import os
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 import argparse
 import time
 import torch
@@ -13,23 +12,31 @@ import torchvision.transforms as transforms
 from torch import nn
 from src.B0_S import B0_S
 import NYUv2_dataloader as Data
+import SUNRGBD.SUNRGBD_dataloader as Data
 from utils.utils import save_ckpt, save_ckpt_new, intersectionAndUnion
 from utils.utils import load_ckpt, AverageMeter
 from utils.utils import print_log
-from utils.logger import get_logger
+from utils.logger import my_get_logger
+from utils.utils import CrossEntropyLoss2d
 import random
 
 torch.backends.cudnn.enabled = True
 torch.backends.cudnn.benchmark = True
 
+os.environ['CUDA_VISIBLE_DEVICES'] = '3'
+DOWNSAMPLE_RATIO = 0.5
+MEMORY_PATH = "/mnt/syh"
+dataset_path = os.path.join(MEMORY_PATH, "datasets", "SUNRGBD_numpy")
+ckpt_path = os.path.join(MEMORY_PATH, "asym_checkpoints", f"SUN_B0_S_{DOWNSAMPLE_RATIO}_bsize8_class_weight")
+
 parser = argparse.ArgumentParser(description='RGBD Sementic Segmentation')
-parser.add_argument('--data-dir', default="/mnt/syh/datasets/NYUv2/data/", metavar='DIR',
+parser.add_argument('--data-dir', default=dataset_path, metavar='DIR',
                     help='path to dataset-D')
 parser.add_argument('--cuda', action='store_true', default=True,
                     help='enables CUDA training')
 parser.add_argument('-j', '--workers', default=8, type=int, metavar='N',
                     help='number of data loading workers (default: 8)')
-parser.add_argument('--epochs', default=500, type=int, metavar='N',
+parser.add_argument('--epochs', default=200, type=int, metavar='N',
                     help='number of total epochs to run (default: 1500)')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
@@ -45,14 +52,12 @@ parser.add_argument('--save-epoch-freq', '-s', default=25, type=int,
                     metavar='N', help='save epoch frequency (default: 5)')
 parser.add_argument('--last-ckpt', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
-parser.add_argument('--ckpt-dir', default='/mnt/syh/asym_checkpoints/B0_S_1.0_auto_bsize8', metavar='DIR',
+parser.add_argument('--ckpt-dir', default=ckpt_path, metavar='DIR',
                     help='path to save checkpoints')
 parser.add_argument('--checkpoint', action='store_true', default=False,
                     help='Using Pytorch checkpoint or not')
 parser.add_argument('--amp', action='store_true', default=False,
                     help="autocast train")
-
-DOWNSAMPLE_RATIO = 1.0
 
 args = parser.parse_args()
 device = torch.device("cuda:0" if args.cuda and torch.cuda.is_available() else "cpu")
@@ -60,14 +65,10 @@ image_w = 640
 image_h = 480
 
 
-def is_eval(epoch):
-    return epoch > 250 or epoch == 1 or epoch % 10 == 0
-
-
 class Engine(object):
-    def __init__(self):
+    def __init__(self, logger):
         self.checkpoint_state = []
-        self.logger = get_logger()
+        self.logger = logger
 
     def save_and_remove(self, epoch, miou, ckpt_dir, model, optimizer, global_step):
         self.checkpoint_state.append(dict(epoch=epoch, miou=miou))
@@ -82,7 +83,10 @@ class Engine(object):
                 pass
             self.checkpoint_state.pop()
         save_ckpt_new(ckpt_dir, model, optimizer, global_step, epoch, 0, 1, miou)
-        
+
+
+def is_eval(epoch):
+    return epoch > 100 or epoch == 1 or epoch % 10 == 0
 
 
 def setup_seed(seed):
@@ -143,11 +147,11 @@ def val(model, dataloader, device):
                 for i in range(output.shape[0]):
                     out_i = output[i]
                     lab_i = label[i]
-                    intersection, union = intersectionAndUnion(out_i, lab_i, numClass=40)
+                    intersection, union = intersectionAndUnion(out_i, lab_i, numClass=37)
                     intersection_meter.update(intersection)
                     union_meter.update(union)
             else:
-                intersection, union = intersectionAndUnion(output, label, numClass=40)
+                intersection, union = intersectionAndUnion(output, label, numClass=37)
                 intersection_meter.update(intersection)
                 union_meter.update(union)
     
@@ -158,10 +162,9 @@ def val(model, dataloader, device):
 
 def train():
 
-    logger = get_logger(log_dir=os.path.join(args.ckpt_dir, "log"),
-                        log_file="train.log")
+    logger = my_get_logger(log_dir=ckpt_path)
     
-    engine = Engine()
+    engine = Engine(logger=logger)
 
     best_miou = 0
     
@@ -169,7 +172,7 @@ def train():
     setup_seed(seed)
     logger.info(f"set seed {seed}")
 
-    train_data = Data.RGBD_Dataset(transform=transforms.Compose([Data.scaleNorm(),
+    train_data = Data.SUNRGBD(transform=transforms.Compose([Data.scaleNorm(),
                                                                  Data.RandomScale((1.0, 1.4, 2.0)),
                                                                  Data.RandomHSV((0.9, 1.1),
                                                                                 (0.9, 1.1),
@@ -183,7 +186,7 @@ def train():
     train_loader = DataLoader(train_data, batch_size=args.batch_size, shuffle=True,
                               num_workers=args.workers, pin_memory=False)
     
-    val_data = Data.RGBD_Dataset(transform=transforms.Compose([Data.scaleNorm(),
+    val_data = Data.SUNRGBD(transform=transforms.Compose([Data.scaleNorm(),
                                                                Data.ToTensor(),
                                                                Data.Normalize()]),
                                  phase_train=False,
@@ -194,9 +197,10 @@ def train():
 
     num_train = len(train_data)
 
-    model = B0_S(num_classes=40, downsample_ratio=DOWNSAMPLE_RATIO)
+    model = B0_S(num_classes=37, downsample_ratio=DOWNSAMPLE_RATIO)
 
-    CEL_weighted = nn.CrossEntropyLoss(reduction='mean', ignore_index=-1)
+    # CEL_weighted = nn.CrossEntropyLoss(reduction='mean', ignore_index=-1)
+    CEL_weighted = CrossEntropyLoss2d()
 
     model.train()
     model.to(device)
@@ -234,10 +238,12 @@ def train():
             if args.amp:
                 with torch.autocast(device_type="cuda", dtype=torch.float16):
                     out = model(image, depth)
-                    loss = CEL_weighted(out, (target_scales[0] - 1).long())
+                    # loss = CEL_weighted(out, (target_scales[0] - 1).long())
+                    loss = CEL_weighted(out, target_scales)
             else:
                 out = model(image, depth)
-                loss = CEL_weighted(out, (target_scales[0] - 1).long())
+                # loss = CEL_weighted(out, (target_scales[0] - 1).long())
+                loss = CEL_weighted(out, target_scales)
 
             if args.amp:
                 # Scales loss. Calls ``backward()`` on scaled loss to create scaled gradients.

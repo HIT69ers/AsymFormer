@@ -18,17 +18,18 @@ from utils.utils import load_ckpt, intersectionAndUnion, AverageMeter, accuracy,
 
 
 EPOCH = 500
-DOWNSAMPLE_RATIO = 0.7
-pth_dir = f"/mnt/sdb/syh/asym_checkpoints/B0_S_{DOWNSAMPLE_RATIO}_bsize8/ckpt_epoch_{EPOCH}.00.pth"
+DOWNSAMPLE_RATIO = 0.6
+# pth_dir = f"/mnt/sdb/syh/asym_checkpoints/B0_S_{DOWNSAMPLE_RATIO}_bsize8/ckpt_epoch_{EPOCH}.00.pth"
+pth_dir = "/mnt/syh/asym_checkpoints/B0_S_0.6_bsize8/epoch-452_miou-55.7.pth"
 model = B0_S(num_classes=40, downsample_ratio=DOWNSAMPLE_RATIO)
 print(f"==============================")
 print(f"Eval B0_S_{DOWNSAMPLE_RATIO}_epoch-{EPOCH}")
 
 parser = argparse.ArgumentParser(description='RGBD Sementic Segmentation')
-# parser.add_argument('--data-dir', default="/mnt/syh/datasets/NYUv2/data/", metavar='DIR',
-#                     help='path to dataset')
-parser.add_argument('--data-dir', default="/mnt/sdb/syh/datasets/data/", metavar='DIR',
+parser.add_argument('--data-dir', default="/mnt/syh/datasets/NYUv2/data/", metavar='DIR',
                     help='path to dataset')
+# parser.add_argument('--data-dir', default="/mnt/sdb/syh/datasets/data/", metavar='DIR',
+#                     help='path to dataset')
 parser.add_argument('-o', '--output', default='./result/', metavar='DIR',
                     help='path to output')
 parser.add_argument('--cuda', action='store_true', default=True,
@@ -92,11 +93,11 @@ class Normalize(object):
         origin_depth = depth.clone()
         image = image / 255
         depth = depth / 1000
-        # image = torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])(image)
+        image = torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])(image)
 
-        image = torchvision.transforms.Normalize(mean=[0.4850042694973687, 0.41627756261047333, 0.3981809741523051],
-                                                 std=[0.26415541082494515, 0.2728415392982039, 0.2831175140191598])(
-            image)
+        # image = torchvision.transforms.Normalize(mean=[0.4850042694973687, 0.41627756261047333, 0.3981809741523051],
+        #                                          std=[0.26415541082494515, 0.2728415392982039, 0.2831175140191598])(
+        #     image)
 
         depth = torchvision.transforms.Normalize(mean=[2.8424503515351494], std=[0.9932836506164299])(depth)
         sample['origin_image'] = origin_image
