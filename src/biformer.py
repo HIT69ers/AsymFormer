@@ -11,7 +11,7 @@ from src.AsymFormer import Cross_Atten_Lite_split, SpatialAttention_max, SCC_Mod
 from src.myformer import get_segformer_backbone
 
 
-rgb_backbone = get_segformer_backbone(shape='b3', pretrained="/mnt/syh/pretrained/segformer/mit_b3.pth")
+rgb_backbone = get_segformer_backbone(shape='b2', pretrained="/mnt/syh/pretrained/segformer/mit_b2.pth")
 d_backbone = get_segformer_backbone(shape="b0", pretrained="/mnt/syh/pretrained/segformer/mit_b0.pth")
 
 

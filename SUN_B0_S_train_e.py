@@ -11,7 +11,7 @@ import torch.optim
 import torchvision.transforms as transforms
 from torch import nn
 from src.B0_S import B0_S
-import NYUv2_dataloader as Data
+# import NYUv2_dataloader as Data
 import SUNRGBD.SUNRGBD_dataloader as Data
 from utils.utils import save_ckpt, save_ckpt_new, intersectionAndUnion
 from utils.utils import load_ckpt, AverageMeter
@@ -23,11 +23,11 @@ import random
 torch.backends.cudnn.enabled = True
 torch.backends.cudnn.benchmark = True
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '3'
-DOWNSAMPLE_RATIO = 0.5
+os.environ['CUDA_VISIBLE_DEVICES'] = '5'
+DOWNSAMPLE_RATIO = 1.0
 MEMORY_PATH = "/mnt/syh"
 dataset_path = os.path.join(MEMORY_PATH, "datasets", "SUNRGBD_numpy")
-ckpt_path = os.path.join(MEMORY_PATH, "asym_checkpoints", f"SUN_B0_S_{DOWNSAMPLE_RATIO}_bsize8_class_weight")
+ckpt_path = os.path.join(MEMORY_PATH, "asym_checkpoints", f"SUN_B0_S_{DOWNSAMPLE_RATIO}_6e-5")
 
 parser = argparse.ArgumentParser(description='RGBD Sementic Segmentation')
 parser.add_argument('--data-dir', default=dataset_path, metavar='DIR',
@@ -42,7 +42,7 @@ parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
 parser.add_argument('-b', '--batch-size', default=8, type=int,
                     metavar='N', help='mini-batch size (default: 10)')
-parser.add_argument('--lr', '--learning-rate', default=5e-5, type=float,
+parser.add_argument('--lr', '--learning-rate', default=6e-5, type=float,
                     metavar='LR', help='initial learning rate')
 parser.add_argument('--weight-decay', '--wd', default=0.01, type=float,
                     metavar='W', help='weight decay (default: 1e-4)')
@@ -199,8 +199,8 @@ def train():
 
     model = B0_S(num_classes=37, downsample_ratio=DOWNSAMPLE_RATIO)
 
-    # CEL_weighted = nn.CrossEntropyLoss(reduction='mean', ignore_index=-1)
-    CEL_weighted = CrossEntropyLoss2d()
+    CEL_weighted = nn.CrossEntropyLoss(reduction='mean', ignore_index=-1)
+    # CEL_weighted = CrossEntropyLoss2d()
 
     model.train()
     model.to(device)
@@ -238,12 +238,12 @@ def train():
             if args.amp:
                 with torch.autocast(device_type="cuda", dtype=torch.float16):
                     out = model(image, depth)
-                    # loss = CEL_weighted(out, (target_scales[0] - 1).long())
-                    loss = CEL_weighted(out, target_scales)
+                    loss = CEL_weighted(out, (target_scales[0] - 1).long())
+                    # loss = CEL_weighted(out, target_scales)
             else:
                 out = model(image, depth)
-                # loss = CEL_weighted(out, (target_scales[0] - 1).long())
-                loss = CEL_weighted(out, target_scales)
+                loss = CEL_weighted(out, (target_scales[0] - 1).long())
+                # loss = CEL_weighted(out, target_scales)
 
             if args.amp:
                 # Scales loss. Calls ``backward()`` on scaled loss to create scaled gradients.

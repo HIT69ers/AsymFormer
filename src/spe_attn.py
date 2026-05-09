@@ -194,6 +194,68 @@ class SCC_Module(nn.Module):
         return fus_s
     
 
+class SpatialAttention_max(nn.Module):
+    def __init__(self, in_channels, reduction1=16, reduction2=8):
+        super(SpatialAttention_max, self).__init__()
+        self.inc = torch.tensor(in_channels)
+
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+
+        self.fc_spatial = nn.Sequential(
+            nn.Linear(in_channels, in_channels // reduction1, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(in_channels // reduction1, in_channels, bias=False),
+        )
+
+        self.fc_channel = nn.Sequential(
+            nn.Linear(in_channels, in_channels // reduction2, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(in_channels // reduction2, in_channels, bias=False),
+        )
+
+        self._init_weight()
+
+    def forward(self, x):
+
+        b, c, h, w = x.size()
+        y_avg = self.avg_pool(x).view(b, c)
+
+        y_spatial = self.fc_spatial(y_avg).view(b, c, 1, 1)
+        y_channel = self.fc_channel(y_avg).view(b, c, 1, 1)
+        y_channel = y_channel.sigmoid()
+
+        map = (x * (y_spatial)).sum(dim=1) / self.inc
+        map = (map / self.inc).sigmoid().unsqueeze(dim=1)
+        return map * x * y_channel
+
+    def _init_weight(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                torch.nn.init.xavier_normal_(m.weight)
+
+
+class SCC_Module_old(nn.Module):
+    def __init__(self, inc_depth2, inc_rgb):
+        super(SCC_Module_old, self).__init__()
+        channel = inc_rgb + inc_depth2
+
+        self.fus_atten = SpatialAttention_max(in_channels=channel)
+        self.conv1 = nn.Conv2d(channel, inc_depth2, kernel_size=1, bias=False)
+        self.bn = nn.BatchNorm2d(inc_depth2)
+
+        self.cross_atten = Cross_Atten_Lite_split(inc_depth2, inc_rgb)
+
+    def forward(self, depth_out, rgb_out):
+        fus_s = torch.cat([depth_out, rgb_out], dim=1)
+        fus_s = self.fus_atten(fus_s)
+        fus_s = self.conv1(fus_s)
+        fus_s = self.bn(fus_s)
+
+        fus_s = self.cross_atten(fus_s, depth_out, rgb_out)
+
+        return fus_s
+    
+
 class SCC_Module_v2(nn.Module):
     def __init__(self, inc_depth2, inc_rgb):
         super(SCC_Module_v2, self).__init__()

@@ -10,7 +10,7 @@ import torch.optim
 import torchvision.transforms as transforms
 from torch import nn
 from src.new_asymformer import *
-import NYUv2_dataloader as Data
+import SUNRGBD.SUNRGBD_dataloader as Data
 from utils.utils import save_ckpt, save_ckpt_new, intersectionAndUnion
 from utils.utils import load_ckpt, AverageMeter
 from utils.utils import print_log_logger
@@ -25,8 +25,8 @@ torch.backends.cudnn.benchmark = True
 
 IGNORE_INDEX = -1  
 DECODER_LOSS = True
-os.environ['CUDA_VISIBLE_DEVICES'] = '6'
-DOWNSAMPLE_RATIO = 0.6
+os.environ['CUDA_VISIBLE_DEVICES'] = '7'
+DOWNSAMPLE_RATIO = 0.5
 MEMORY_PATH = "/mnt/syh"
 USE_BCE_LOSS = False
 BCE_LOSS_RATE = 0.1
@@ -37,7 +37,7 @@ MODEL_CONFIG = dict(name="new_former",
                     rgb_pretrained=os.path.join(MEMORY_PATH, "pretrained", "convnext", "convnext_small_1k_224_ema.pth"),
                     d_branch="b0",
                     d_pretrained=None,
-                    version='v4',
+                    version='v3',
                     with_4=False,
                     with_8=False,
                     with_16=False,
@@ -66,8 +66,8 @@ if (MODEL_CONFIG['with_4'] or MODEL_CONFIG['with_8'] or MODEL_CONFIG['with_16'] 
     elif (not USE_BCE_LOSS) and USE_DICE_LOSS:
         detail_str += '_only_dice_loss'
 
-dataset_path = os.path.join(MEMORY_PATH, "datasets", "NYUv2", "data")
-ckpt_dir = os.path.join(MEMORY_PATH, "asym_checkpoints", MODEL_CONFIG['name'] + "_" + MODEL_CONFIG['rgb_branch'] + "_" + MODEL_CONFIG['d_branch'] + '_' +\
+dataset_path = os.path.join(MEMORY_PATH, "datasets", "SUNRGBD_numpy")
+ckpt_dir = os.path.join(MEMORY_PATH, "asym_checkpoints", 'SUN_'+MODEL_CONFIG['name'] + "_" + MODEL_CONFIG['rgb_branch'] + "_" + MODEL_CONFIG['d_branch'] + '_' +\
                         str(DOWNSAMPLE_RATIO) + "_" + MODEL_CONFIG['version'] + "_" + datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S") + detail_str)
 
 # print(f"use detail loss in the end")
@@ -94,7 +94,7 @@ parser.add_argument('--cuda', action='store_true', default=True,
                     help='enables CUDA training')
 parser.add_argument('-j', '--workers', default=8, type=int, metavar='N',
                     help='number of data loading workers (default: 8)')
-parser.add_argument('--epochs', default=500, type=int, metavar='N',
+parser.add_argument('--epochs', default=200, type=int, metavar='N',
                     help='number of total epochs to run (default: 1500)')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
@@ -123,7 +123,7 @@ image_h = 480
 
 
 def is_eval(epoch):
-    return epoch > 250 or epoch == 1 or epoch % 10 == 0
+    return epoch > 100 or epoch == 1 or epoch % 10 == 0
 
 
 class Engine(object):
@@ -204,11 +204,11 @@ def val(model, dataloader, device):
                 for i in range(output.shape[0]):
                     out_i = output[i]
                     lab_i = label[i]
-                    intersection, union = intersectionAndUnion(out_i, lab_i, numClass=40)
+                    intersection, union = intersectionAndUnion(out_i, lab_i, numClass=37)
                     intersection_meter.update(intersection)
                     union_meter.update(union)
             else:
-                intersection, union = intersectionAndUnion(output, label, numClass=40)
+                intersection, union = intersectionAndUnion(output, label, numClass=37)
                 intersection_meter.update(intersection)
                 union_meter.update(union)
     
@@ -225,7 +225,7 @@ def train():
     seed = 2333
     setup_seed(seed)
     logger.info(f"set seed {seed}")
-    train_data = Data.RGBD_Dataset(transform=transforms.Compose([Data.scaleNorm(),
+    train_data = Data.SUNRGBD(transform=transforms.Compose([Data.scaleNorm(),
                                                                  Data.RandomScale((1.0, 1.4, 2.0)),
                                                                  Data.RandomHSV((0.9, 1.1),
                                                                                 (0.9, 1.1),
@@ -239,7 +239,7 @@ def train():
     train_loader = DataLoader(train_data, batch_size=args.batch_size, shuffle=True,
                               num_workers=args.workers, pin_memory=False)
 
-    val_data = Data.RGBD_Dataset(transform=transforms.Compose([Data.scaleNorm(),
+    val_data = Data.SUNRGBD(transform=transforms.Compose([Data.scaleNorm(),
                                                                Data.ToTensor(),
                                                                Data.Normalize()]),
                                  phase_train=False,
@@ -274,11 +274,12 @@ def train():
                     d_branch=MODEL_CONFIG['d_branch'],
                     d_pretrained=MODEL_CONFIG['d_pretrained'],
                     downsample_ratio=DOWNSAMPLE_RATIO,
-                    num_classes=40,
+                    num_classes=37,
                     with_4=MODEL_CONFIG['with_4'],
                     with_8=MODEL_CONFIG['with_8'],
                     with_16=MODEL_CONFIG['with_16'],
-                    with_32=MODEL_CONFIG['with_32'])
+                    with_32=MODEL_CONFIG['with_32'],
+                    norm_layer=nn.BatchNorm2d)
     #####################################
 
     ##################################### 

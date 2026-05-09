@@ -12,15 +12,15 @@ import torchvision.transforms as transforms
 from torch import nn
 from src.biformer import biformer
 import NYUv2_dataloader as Data
-from utils.utils import save_ckpt
-from utils.utils import load_ckpt
+from utils.utils import save_ckpt, save_ckpt_new, intersectionAndUnion
+from utils.utils import load_ckpt, AverageMeter
 from utils.utils import print_log
+from utils.logger import get_logger
 import random
 
 torch.backends.cudnn.enabled = True
 torch.backends.cudnn.benchmark = True
-
-os.environ['CUDA_VISIBLE_DEVICES'] = '5'
+os.environ['CUDA_VISIBLE_DEVICES'] = '7'
 DOWNSAMPLE_RATIO = 1.0
 
 parser = argparse.ArgumentParser(description='RGBD Sementic Segmentation')
@@ -46,7 +46,7 @@ parser.add_argument('--save-epoch-freq', '-s', default=25, type=int,
                     metavar='N', help='save epoch frequency (default: 5)')
 parser.add_argument('--last-ckpt', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
-parser.add_argument('--ckpt-dir', default=f'/mnt/syh/asym_checkpoints/Biformer_b3_b0_{DOWNSAMPLE_RATIO}_M1_bsize8/', metavar='DIR',
+parser.add_argument('--ckpt-dir', default=f'/mnt/syh/asym_checkpoints/Biformer_b2_b0_{DOWNSAMPLE_RATIO}_M1_auto/', metavar='DIR',
                     help='path to save checkpoints')
 parser.add_argument('--checkpoint', action='store_true', default=False,
                     help='Using Pytorch checkpoint or not')
@@ -59,6 +59,64 @@ args = parser.parse_args()
 device = torch.device("cuda:0" if args.cuda and torch.cuda.is_available() else "cpu")
 image_w = 640
 image_h = 480
+
+
+def is_eval(epoch):
+    return epoch > 250 or epoch == 1 or epoch % 10 == 0
+
+
+class Engine(object):
+    def __init__(self):
+        self.checkpoint_state = []
+        self.logger = get_logger()
+
+    def save_and_remove(self, epoch, miou, ckpt_dir, model, optimizer, global_step):
+        self.checkpoint_state.append(dict(epoch=epoch, miou=miou))
+        self.checkpoint_state.sort(key=lambda x: x["miou"], reverse=True)
+        if len(self.checkpoint_state) > 5:
+            try:
+                ckpt_model_filename = f"epoch-{self.checkpoint_state[-1]['epoch']}_miou-{self.checkpoint_state[-1]['miou']}.pth"
+                ckpt_path = os.path.join(ckpt_dir, ckpt_model_filename)
+                os.remove(ckpt_path)
+                self.logger.info(f"remove inferior checkpoint: {self.checkpoint_state[-1]}")
+            except:
+                pass
+            self.checkpoint_state.pop()
+        save_ckpt_new(ckpt_dir, model, optimizer, global_step, epoch, 0, 1, miou)
+
+
+def val(model, dataloader, device):
+    model.eval()
+    intersection_meter = AverageMeter()
+    union_meter = AverageMeter()
+    with torch.no_grad():
+        for batch_idx, sample in enumerate(dataloader):
+            if ((batch_idx + 1) % int(len(dataloader) * 0.5) == 0 or batch_idx == 0):
+                print(f"Validation Iter: {batch_idx + 1} / {len(dataloader)}")
+            image = sample['image'].to(device)
+            depth = sample['depth'].to(device)
+            label = sample['label'].numpy()
+
+            pred = model(image, depth)
+            output = torch.max(pred, 1)[1].cpu().numpy()
+
+            output = output + 1
+
+            if output.ndim == 3:
+                for i in range(output.shape[0]):
+                    out_i = output[i]
+                    lab_i = label[i]
+                    intersection, union = intersectionAndUnion(out_i, lab_i, numClass=40)
+                    intersection_meter.update(intersection)
+                    union_meter.update(union)
+            else:
+                intersection, union = intersectionAndUnion(output, label, numClass=40)
+                intersection_meter.update(intersection)
+                union_meter.update(union)
+
+    iou = intersection_meter.sum / (union_meter.sum + 1e-10)
+    miou = iou.mean()
+    return round(miou * 100, 2)
 
 
 def setup_seed(seed):
@@ -96,7 +154,17 @@ def create_lr_scheduler(optimizer,
 
 
 def train():
+
+    logger = get_logger(log_dir=os.path.join(args.ckpt_dir, "log"),
+                        log_file="train.log")
+
+    engine = Engine()
+
+    best_miou = 0
+
     setup_seed(2333)
+    logger.info(f"set seed 2333")
+
     train_data = Data.RGBD_Dataset(transform=transforms.Compose([Data.scaleNorm(),
                                                                  Data.RandomScale((1.0, 1.4, 2.0)),
                                                                  Data.RandomHSV((0.9, 1.1),
@@ -111,6 +179,16 @@ def train():
                                    d_mul_channel=True)
     train_loader = DataLoader(train_data, batch_size=args.batch_size, shuffle=True,
                               num_workers=args.workers, pin_memory=False)
+
+    val_data = Data.RGBD_Dataset(transform=transforms.Compose([Data.scaleNorm(),
+                                                               Data.d_mul_channel_ToTensor(),
+                                                               Data.Normalize()]),
+                                 phase_train=False,
+                                 data_dir=args.data_dir,
+                                 txt_name='test.txt',
+                                 d_mul_channel=True
+                                 )
+    val_loader = DataLoader(val_data, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, pin_memory=True)
 
     num_train = len(train_data)
 
@@ -135,13 +213,11 @@ def train():
         scaler = torch.cuda.amp.GradScaler()
 
     for epoch in range(int(args.start_epoch), args.epochs):
+        model.train()
 
         local_count = 0
         last_count = 0
         end_time = time.time()
-        if epoch % args.save_epoch_freq == 0 and epoch != args.start_epoch:
-            save_ckpt(args.ckpt_dir, model, optimizer, global_step, epoch,
-                      local_count, num_train)
 
         for batch_idx, sample in enumerate(train_loader):
 
@@ -174,14 +250,30 @@ def train():
 
             local_count += image.data.shape[0]
             global_step += 1
+            real_epoch = epoch + 1
 
             if global_step % args.print_freq == 0 or global_step == 1:
                 time_inter = time.time() - end_time
                 count_inter = local_count - last_count
-                print_log(global_step, epoch, local_count, count_inter,
+                print_log(global_step, real_epoch, local_count, count_inter,
                           num_train, loss, time_inter)
                 end_time = time.time()
                 last_count = local_count
+
+        if is_eval(real_epoch):
+            torch.cuda.empty_cache()
+            with torch.no_grad():
+                model.eval()
+                if args.amp:
+                    with torch.autocast(device_type="cuda", dtype=torch.float16):
+                        miou = val(model, val_loader, device)
+                else:
+                    miou = val(model, val_loader, device)
+            if miou > best_miou:
+                best_miou = miou
+                engine.save_and_remove(real_epoch, miou, args.ckpt_dir, model, optimizer, global_step)
+
+            logger.info(f"Epoch {real_epoch} validation result: mIoU {miou}, best mIoU {best_miou}")
 
     save_ckpt(args.ckpt_dir, model, optimizer, global_step, args.epochs,
               0, num_train)

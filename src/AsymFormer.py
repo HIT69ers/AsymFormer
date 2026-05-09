@@ -1,6 +1,6 @@
 from torch.nn import functional as F
 from src.mix_transformer import OverlapPatchEmbed, mit_b0
-from src.convnext import convnext_tiny
+from src.convnext import convnext_tiny, convnext_tiny_local
 from thop import profile
 from src.MLPDecoder import DecoderHead
 import os
@@ -20,7 +20,7 @@ def load_pretrain2(net, pretrain_name):
     return net
 
 
-model1 = convnext_tiny(pretrained=False, in_22k=True, drop_path_rate=0.3, num_classes=21841)
+model1 = convnext_tiny_local(pretrained=os.path.join("/mnt/syh", "pretrained", "convnext", "convnext_tiny_1k_224_ema.pth"), in_22k=False, drop_path_rate=0.3, num_classes=1000)
 ft1 = model1.stages
 stem = model1.downsample_layers
 stem1 = [stem[0], stem[1], stem[2], stem[3]]
