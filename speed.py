@@ -13,7 +13,7 @@ from src.B0_S import B0_S
 from src.biformer import biformer
 
 
-DOWNSAMPLE_RATIO = 0.9
+DOWNSAMPLE_RATIO = 1.0
 MODEL_CONFIG = dict(name="new_former", 
                     rgb_branch="S", 
                     rgb_pretrained=None,
@@ -25,7 +25,7 @@ network = New_Asymformer_v3
 
 # network = B0_T
 
-network = B0_S
+# network = B0_S
 
 
 if __name__ == '__main__':
@@ -36,18 +36,18 @@ if __name__ == '__main__':
     #torch.backends.cudnn.enabled = True
     #torch.backends.cudnn.benchmark = True
 
-    # model = network(rgb_branch=MODEL_CONFIG['rgb_branch'],
-    #                         rgb_pretrained=MODEL_CONFIG['rgb_pretrained'],
-    #                         d_branch=MODEL_CONFIG['d_branch'],
-    #                         d_pretrained=MODEL_CONFIG['d_pretrained'],
-    #                         downsample_ratio=DOWNSAMPLE_RATIO,
-    #                         num_classes=40)
+    model = network(rgb_branch=MODEL_CONFIG['rgb_branch'],
+                            rgb_pretrained=MODEL_CONFIG['rgb_pretrained'],
+                            d_branch=MODEL_CONFIG['d_branch'],
+                            d_pretrained=MODEL_CONFIG['d_pretrained'],
+                            downsample_ratio=DOWNSAMPLE_RATIO,
+                            num_classes=40)
 
     # model = network(num_classes=40)
 
     # model = network(num_classes=40, downsample_ratio=DOWNSAMPLE_RATIO)
 
-    model = biformer(num_classes=40, downsample_ratio=DOWNSAMPLE_RATIO)
+    # model = biformer(num_classes=40, downsample_ratio=DOWNSAMPLE_RATIO)
 
     model.eval()
     model.to(device)
@@ -55,8 +55,8 @@ if __name__ == '__main__':
 
     input_rgb = torch.randn(1, 3, 480, 640).cuda()
 
-    # input_depth = torch.randn(1, 1, 480, 640).cuda()
-    input_depth = torch.randn(1, 3, 480, 640).cuda()
+    input_depth = torch.randn(1, 1, 480, 640).cuda()
+    # input_depth = torch.randn(1, 3, 480, 640).cuda()
 
     with torch.no_grad():
         for _ in range(10):
